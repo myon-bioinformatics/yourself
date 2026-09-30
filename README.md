@@ -87,3 +87,8 @@ Workspace marker presence does not prove buildability or installed dependencies.
 
 CI preserves job-specific JUnit artifacts even on test failure, for aggregation
 by the shared xprobe importer. This module does not duplicate JUnit parsing.
+
+## Native pytest evidence
+
+CI also preserves native pytest JSONL for outcome exploration, including xfail
+and phase errors. See [usage and provenance](docs/pytest-observations.md).
