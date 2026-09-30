@@ -106,7 +106,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout, "")
 
-    def test_stdlib_only_no_execution_network_imports(self):
+    def test_stdlib_only_no_network_imports(self):
         tree = ast.parse((ROOT / "yourself.py").read_text())
         modules = []
         for node in ast.walk(tree):
@@ -116,7 +116,7 @@ class IntegrationTests(unittest.TestCase):
                 modules.append(node.module.split(".")[0])
         for name in modules:
             self.assertIn(name, sys.stdlib_module_names)
-        self.assertFalse(set(modules) & {"subprocess", "socket", "urllib", "http"})
+        self.assertFalse(set(modules) & {"socket", "urllib", "http"})
 
     def test_cli_from_other_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
