@@ -164,11 +164,11 @@ def command_inventory(names=None, *, versions=False, timeout=2):
                                               timeout=timeout, check=False)
                     # Only a numeric version escapes the observation boundary.
                     output = (observed.stdout + b'\n' + observed.stderr)[:8192]
-                    version = re.search(rb'(?<![\w.])\d+(?:\.\d+){1,3}(?![\w.])', output)
+                    version = re.search(rb'(?<![\w.])v?(\d+(?:\.\d+){1,3})(?![\w.])', output)
                     if observed.returncode:
                         item['status'] = 'nonzero_exit'
                     elif version:
-                        item['version'] = version.group().decode('ascii')
+                        item['version'] = version.group(1).decode('ascii')
                         item['status'] = 'measured'
                     else:
                         item['status'] = 'unrecognized_version'
