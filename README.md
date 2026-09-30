@@ -84,3 +84,6 @@ Default diagnosis discovers tool presence without executing tools. `--versions` 
 Flutter/Dart/npm/pytest/goma/gomacc are **presence-only**, even with `--versions`, because their entry points can bootstrap or initialize state. Docker uses `docker --version` only; no daemon query or container execution. Version commands require trusted PATH binaries; a substituted executable can have arbitrary behavior. A probe captures subprocess output in memory before considering at most its first 8192 bytes for numeric version extraction; this is not an isolated runner or a hostile-output memory limit.
 
 Workspace marker presence does not prove buildability or installed dependencies. Symlink markers are ignored. Listener observation reads Linux proc locally; Windows/macOS return `measured=false` with `unsupported_platform`, and proc permissions/partial reads remain errors. There is no port scan, remote request, package enumeration, configuration dump, service repair, Redis/Celery integration or Git-identity collection.
+
+CI preserves job-specific JUnit artifacts even on test failure, for aggregation
+by the shared xprobe importer. This module does not duplicate JUnit parsing.
