@@ -46,6 +46,16 @@ def test_fixed_version_argv_and_no_output_leak(monkeypatch, output, code, status
     assert '/trusted' not in json.dumps(rows)
 
 
+def test_node_v_prefixed_version_is_normalized(monkeypatch):
+    monkeypatch.setattr(yourself.shutil, 'which', lambda name: '/trusted/node')
+    def run(argv, **kwargs):
+        assert argv == ['/trusted/node', '--version']
+        return SimpleNamespace(stdout=b'v22.14.0\\n', stderr=b'', returncode=0)
+    monkeypatch.setattr(yourself.subprocess, 'run', run)
+    assert yourself.command_inventory(['node'], versions=True) == [
+        {'name': 'node', 'available': True, 'version': '22.14.0', 'status': 'measured'}]
+
+
 @pytest.mark.parametrize('exception,status', [
     (subprocess.TimeoutExpired(['git'], 1), 'timeout'), (PermissionError(), 'execution_error')])
 def test_probe_failures_preserved(monkeypatch, exception, status):
