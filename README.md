@@ -4,7 +4,34 @@ Single-file, standard-library Python tool for read-only inspection of host, OS, 
 
 ## Design
 
-The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; there is no main/CLI in the artifact and import is inert. The optional CLI lives in `scripts/yourself_cli.py`.
+The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. It provides functions, `__all__`, and `__version__`; import is inert. Direct execution provides the default environment introduction. The existing optional CLI remains in `scripts/yourself_cli.py`.
+
+## Start without options (0.3)
+
+```sh
+python yourself.py
+python -S /path/to/yourself.py
+python yourself.py --format json
+```
+
+Direct execution observes OS/Python, fixed tool availability and project
+markers/disk capacity in the current working directory. It does not read
+project contents, show host name/absolute command paths, dump environment
+variables, connect to services, launch browsers, execute tests or install
+anything. Import and `collect()` keep their previous minimal behavior.
+
+The presence-only inventory includes gh, uv, pip/pipx, npx/pnpm/yarn,
+Playwright, actionlint, jq/curl, ffmpeg/ImageMagick and tsc alongside existing
+Git/Python/Node/Docker/build/search tools. These choices reflect this project's
+workflows, not measured AI command-frequency statistics. Availability means a
+PATH executable was found, not that credentials, dependencies, browsers or
+services work. New entries stay presence-only even with `--versions`.
+
+`--directory` selects another workspace; `--minimal` omits workspace/tools.
+Version execution still requires `--versions` and uses only the existing
+fixed allowlist. Ports remain opt-in through the advanced CLI/API. Output is
+stdout only; exit 2 marks invalid or partial observations. A copied single
+file works independently, without scripts or external runtime libraries.
 
 Python target: 3.10–3.14. Test dependencies are isolated in `tests/requirements.txt`; runtime is standard-library only.
 
