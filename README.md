@@ -15,7 +15,11 @@ python yourself.py --format json
 ```
 
 Direct execution observes OS/Python, fixed tool availability and project
-markers/disk capacity in the current working directory. It does not read
+markers/disk capacity in the current working directory, then suggests relevant
+checks based on those measured markers and missing/available tools.
+This is ordinary standalone runtime functionality: Python alone is sufficient,
+with no pytest, JUnit, virtual environment or pip installation prerequisite.
+It does not read
 project contents, show host name/absolute command paths, dump environment
 variables, connect to services, launch browsers, execute tests or install
 anything. Import and `collect()` keep their previous minimal behavior.
