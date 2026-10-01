@@ -17,8 +17,7 @@ from pathlib import Path
 
 __version__ = "0.3.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown",
-           "command_inventory", "workspace_facts", "listener_ports", "diagnose",
-           "introduce", "main"]
+           "command_inventory", "workspace_facts", "listener_ports", "diagnose", "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -113,9 +112,6 @@ def to_markdown(facts):
     for key in ("os_release", "workspace", "listeners"):
         if facts.get(key) is not None:
             rows.extend(["", key + ": " + _cell(facts[key])])
-    if facts.get("next_checks"):
-        rows.extend(["", "## Next checks", ""])
-        rows.extend("- " + _cell(item) for item in facts["next_checks"])
     return "\n".join(rows) + "\n"
 
 
@@ -130,7 +126,6 @@ _COMMANDS = {
     # Discover their presence, but do not run them as an environment probe.
     'flutter': None, 'dart': None, 'npm': None, 'pytest': None,
     'goma': None, 'gomacc': None,
-    # Presence only: do not authenticate, bootstrap, install, or launch browsers.
     'gh': None, 'uv': None, 'pip': None, 'pipx': None,
     'npx': None, 'pnpm': None, 'yarn': None, 'playwright': None,
     'actionlint': None, 'jq': None, 'curl': None,
@@ -274,33 +269,6 @@ def diagnose(*, directory=None, include_host=False, versions=False,
     return facts
 
 
-def introduce(directory=".", *, versions=False):
-    """Daily workspace introduction; guidance uses marker/presence facts only."""
-    facts = diagnose(directory=directory, versions=versions)
-    present = {row["name"] for row in facts["commands"] if row["available"]}
-    markers = set(facts["workspace"]["markers"])
-    suggestions = []
-    groups = (
-        ({"pyproject.toml", "requirements.txt"}, ("python",), "Python"),
-        ({"package.json"}, ("node", "npm"), "Node"),
-        ({"pubspec.yaml"}, ("flutter", "dart"), "Flutter"),
-        ({"Dockerfile", "compose.yaml", "docker-compose.yml"}, ("docker",), "Docker"),
-        ({"CMakeLists.txt"}, ("cmake",), "CMake"),
-        ({"BUILD.gn"}, ("ninja",), "GN"),
-    )
-    for clues, tools, label in groups:
-        if markers & clues:
-            missing = [name for name in tools if name not in present]
-            suggestions.append(label + " markers observed; " + (
-                "not found on PATH: " + ", ".join(missing) if missing else
-                "tool presence observed; configuration/readiness still unverified"))
-    if not suggestions:
-        suggestions.append("No supported project marker observed in the immediate directory; choose --directory if needed.")
-    suggestions.append("No installs, builds, tests, authentication or service checks were executed.")
-    facts["next_checks"] = suggestions
-    return facts
-
-
 def main(argv=None):
     """Direct single-file entry point; no-argument use observes current workspace."""
     import argparse
@@ -312,7 +280,7 @@ def main(argv=None):
                         help="OS/runtime only; omit workspace and tool observations")
     args = parser.parse_args(argv)
     try:
-        facts = collect() if args.minimal else introduce(
+        facts = collect() if args.minimal else diagnose(
             directory=args.directory, versions=args.versions)
     except (OSError, ValueError) as error:
         print(type(error).__name__, file=sys.stderr)

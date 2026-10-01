@@ -32,7 +32,7 @@ def test_bad_directory(capsys, tmp_path):
 
 @pytest.mark.parametrize("status", ["timeout", "execution_error", "nonzero_exit", "unrecognized_version"])
 def test_partial(monkeypatch, capsys, status):
-    monkeypatch.setattr(yourself, "introduce", lambda **kwargs: {
+    monkeypatch.setattr(yourself, "diagnose", lambda **kwargs: {
         **yourself.collect(), "workspace": {"errors": []},
         "commands": [{"status": status, "name": "git", "available": True, "version": None}],
     })
@@ -40,7 +40,7 @@ def test_partial(monkeypatch, capsys, status):
 
 
 def test_workspace_error(monkeypatch, capsys):
-    monkeypatch.setattr(yourself, "introduce", lambda **kwargs: {
+    monkeypatch.setattr(yourself, "diagnose", lambda **kwargs: {
         **yourself.collect(), "workspace": {"errors": ["permission"]}, "commands": [],
     })
     assert yourself.main([]) == 2
@@ -53,23 +53,3 @@ def test_copy_one_file_execution(tmp_path):
                           cwd=tmp_path, capture_output=True, text=True, timeout=10)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["workspace"] is not None
-
-
-@pytest.mark.parametrize("marker,tools,label", [
-    ("requirements.txt", ["python"], "Python"),
-    ("package.json", ["node", "npm"], "Node"),
-    ("pubspec.yaml", ["flutter", "dart"], "Flutter"),
-    ("Dockerfile", ["docker"], "Docker"),
-    ("CMakeLists.txt", ["cmake"], "CMake"),
-    ("BUILD.gn", ["ninja"], "GN"),
-])
-@pytest.mark.parametrize("available", [False, True])
-def test_daily_guidance(monkeypatch, tmp_path, marker, tools, label, available):
-    (tmp_path / marker).touch()
-    monkeypatch.setattr(yourself, "command_inventory", lambda *a, **k: [
-        {"name": name, "available": available, "status": "not_requested", "version": None}
-        for name in tools])
-    report = yourself.introduce(tmp_path)
-    assert report["next_checks"][0].startswith(label)
-    assert ("not found on PATH" in report["next_checks"][0]) == (not available)
-    assert "Next checks" in yourself.to_markdown(report)

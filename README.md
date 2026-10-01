@@ -4,38 +4,7 @@ Single-file, standard-library Python tool for read-only inspection of host, OS, 
 
 ## Design
 
-The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. It provides functions, `__all__`, and `__version__`; import is inert. Direct execution provides the default environment introduction. The existing optional CLI remains in `scripts/yourself_cli.py`.
-
-## Start without options (0.3)
-
-```sh
-python yourself.py
-python -S /path/to/yourself.py
-python yourself.py --format json
-```
-
-Direct execution observes OS/Python, fixed tool availability and project
-markers/disk capacity in the current working directory, then suggests relevant
-checks based on those measured markers and missing/available tools.
-This is ordinary standalone runtime functionality: Python alone is sufficient,
-with no pytest, JUnit, virtual environment or pip installation prerequisite.
-It does not read
-project contents, show host name/absolute command paths, dump environment
-variables, connect to services, launch browsers, execute tests or install
-anything. Import and `collect()` keep their previous minimal behavior.
-
-The presence-only inventory includes gh, uv, pip/pipx, npx/pnpm/yarn,
-Playwright, actionlint, jq/curl, ffmpeg/ImageMagick and tsc alongside existing
-Git/Python/Node/Docker/build/search tools. These choices reflect this project's
-workflows, not measured AI command-frequency statistics. Availability means a
-PATH executable was found, not that credentials, dependencies, browsers or
-services work. New entries stay presence-only even with `--versions`.
-
-`--directory` selects another workspace; `--minimal` omits workspace/tools.
-Version execution still requires `--versions` and uses only the existing
-fixed allowlist. Ports remain opt-in through the advanced CLI/API. Output is
-stdout only; exit 2 marks invalid or partial observations. A copied single
-file works independently, without scripts or external runtime libraries.
+The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
 
 Python target: 3.10–3.14. Test dependencies are isolated in `tests/requirements.txt`; runtime is standard-library only.
 
@@ -123,3 +92,28 @@ by the shared xprobe importer. This module does not duplicate JUnit parsing.
 
 CI also preserves native pytest JSONL for outcome exploration, including xfail
 and phase errors. See [usage and provenance](docs/pytest-observations.md).
+
+## Direct standalone use (0.3)
+
+```sh
+python yourself.py
+python yourself.py --format json
+python yourself.py --minimal
+```
+
+Python alone is sufficient, including `python -S /path/to/yourself.py`.
+No pip, virtual environment, pytest or JUnit setup is required.
+
+The main is only an entry/formatting layer: default calls existing
+`diagnose(directory=".")` and `to_markdown`; --format json uses `to_json`;
+--minimal calls `collect()`. No new main-specific diagnostic engine or
+project recommendation function is introduced.
+
+The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
+jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
+even with --versions. Presence is not authentication/build/service readiness.
+--versions remains explicit opt-in to the existing fixed allowlist.
+No test/build/browser execution, installs, repairs, environment dump or
+project-content reading. Workspace markers and disk facts use existing APIs.
+Import stays inert, APIs remain reusable, and existing scope/caveats apply.
+Exit 2 marks invalid/partial observations; output goes to stdout only.
