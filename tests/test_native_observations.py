@@ -3,29 +3,59 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 
 import pytest
-import xprobe
+from vendor import xprobe
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_adapter_provenance():
-    provenance = json.loads((ROOT / 'vendor/xprobe_pytest.provenance.json').read_text())
-    data = (ROOT / 'vendor/xprobe_pytest.py').read_bytes()
-    commit = '326acd667e13b21bf53ccc1590af960edf8cbf6c'
-    blob = '70fac53151e97f5f28d23f9961d3837b7a885ea8'
-    sha256 = 'c0ea71f9d971bf47a9f5f1794ef8a7f641dd17694ea8e7f29795d326c5229285'
-    assert provenance['repository'] == 'myon-bioinformatics/xprobe'
-    assert provenance['path'] == 'scripts/xprobe_pytest.py'
-    assert provenance['commit'] == commit
-    assert provenance['sha256'] == sha256
-    assert provenance['blob_sha'] == blob
-    assert hashlib.sha256(data).hexdigest() == sha256
-    assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == blob
+def test_vendor_lock_provenance():
+    lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
+    assert lock['schema'] == 'vendor-lock/1'
+    assert {(entry['source'], entry['destination']) for entry in lock['files']} == {
+        ('scripts/xprobe_pytest.py', 'vendor/xprobe_pytest.py'),
+        ('xprobe.py', 'vendor/xprobe.py'), ('LICENSE', 'vendor/xprobe-LICENSE')}
+    assert len(lock['files']) == 3
+    for entry in lock['files']:
+        assert entry['repository'] == 'myon-bioinformatics/xprobe'
+        assert entry['ref'] == 'refs/heads/main'
+        assert re.fullmatch(r'[0-9a-f]{40}', entry['commit'])
+        data = (ROOT / entry['destination']).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == entry['sha256']
+        assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == entry['blob_sha']
+    assert Path(xprobe.__file__).resolve() == ROOT / 'vendor/xprobe.py'
+
+
+def test_shared_workflow_and_tool_pins_match():
+    workflow = (ROOT / '.github/workflows/vendor-update.yml').read_text(encoding='utf-8')
+    ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+    ref = re.search(r'reusable-vendor-update.yml@([0-9a-f]{40})', workflow).group(1)
+    tool = re.search(r'tool-commit: ([0-9a-f]{40})', workflow).group(1)
+    checkout = re.search(r'repository: myon-bioinformatics/myon-bioinformatics\n\s+ref: ([0-9a-f]{40})', ci).group(1)
+    assert ref == tool == checkout
+
+
+def test_git_checkout_retains_locked_bytes_with_autocrlf(tmp_path):
+    # Exercise Windows-style checkout conversion, particularly LICENSE files.
+    subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(tmp_path), 'config', 'core.autocrlf', 'true'], check=True)
+    shutil.copyfile(ROOT / '.gitattributes', tmp_path / '.gitattributes')
+    lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
+    files = [entry['destination'] for entry in lock['files']]
+    for relative in files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, path)
+    subprocess.run(['git', '-C', str(tmp_path), 'add', '--', '.gitattributes', *files], check=True, capture_output=True)
+    for relative in files:
+        (tmp_path / relative).unlink()
+    subprocess.run(['git', '-C', str(tmp_path), 'checkout', '--', *files], check=True, capture_output=True)
+    assert all((tmp_path / relative).read_bytes() == (ROOT / relative).read_bytes() for relative in files)
 
 
 @pytest.mark.parametrize("junit", [False, True])
@@ -64,7 +94,7 @@ def test_skip(): pass''', encoding='utf-8')
     env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
     env.pop('PYTEST_ADDOPTS', None)
     result = subprocess.run(
-        [sys.executable, '-m', 'pytest', '-c', os.devnull, '-p', 'vendor.xprobe_pytest',
+        [sys.executable, '-m', 'pytest', '-c', os.devnull, '--rootdir=' + str(tmp_path), '-p', 'vendor.xprobe_pytest',
          '--xprobe-jsonl=' + str(destination), '--xprobe-repository=myon-bioinformatics/yourself',
          '--xprobe-run-id=controlled-child',
          *(['--junitxml=' + str(tmp_path / 'junit.xml'), '-o', 'junit_logging=all'] if junit else []),
@@ -100,14 +130,17 @@ def test_skip(): pass''', encoding='utf-8')
         'call': {'failed': 2, 'passed': 2, 'xfail': 1, 'xpass_strict': 1},
         'teardown': {'passed': 7, 'error': 1}}
     assert 'private' not in text
+    rows = [json.loads(line) for line in text.splitlines()]
+    phase_nodes = [r['value']['node'] for r in rows if 'phase' in r['value']]
+    assert phase_nodes and all(node.startswith('test_sample.py::') for node in phase_nodes)
     if junit:
-        rows = [json.loads(line) for line in text.splitlines()]
         native = sorted((r['value']['node'].split('::')[-1],
                          'failure' if r['value']['phase'] == 'call' else 'error')
                         for r in rows if r['value'].get('outcome') in
                         {'failed', 'error', 'xpass_strict'})
         identities = sorted((r['value']['test'], r['value']['kind']) for r in report['cases'])
         assert not report['truncated']
+        assert all(r['value']['class'] == 'test_sample' for r in report['cases'])
         assert native == identities == [
             ('test_cleanup', 'error'), ('test_failure', 'failure'),
             ('test_failure', 'failure'), ('test_setup', 'error'),
