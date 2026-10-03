@@ -1,65 +1,48 @@
-# Test-only vendor placement and updates
+# Public vendor placement and CI updates
 
-`vendor.lock.json` is the sole provenance record for the xprobe adapter, importer
-and upstream LICENSE. All three remain test-only and byte-for-byte upstream
-copies. `yourself.py` remains a standalone stdlib module. Source commit/blob and
-SHA-256 values are explicit; normal CI never resolves upstream main.
-Git attributes disable text conversion for vendor copies, preserving upstream
-bytes (including LICENSE line endings) on Windows as well as Unix checkouts.
+The checked-in `vendor.lock.json` records each allowlisted source and LICENSE
+file with its upstream commit, Git blob and SHA-256. Checked-in copies support
+offline local tests; application runtime dependencies are unchanged. Git
+attributes retain upstream bytes on Windows and Unix.
 
-The shared tool/workflow is pinned to merged commit
-`ec71deac0b4232132130021037482b3f97670805`. CI checks the checked-in copies first,
-then deletes those three copies and materializes them from their locked GitHub
-commits before testing. Verification failures fail CI. Checked-in copies retain
-offline local testing; no source edits or provenance JSON copying are needed to
-prepare an update proposal. The former per-adapter provenance JSON is retired.
-The generic tool's validation/error regressions stay upstream.
+CI resolves and updates the allowlist once in a `resolve-vendor` job. That job
+uploads the lock plus exact vendor bytes as `vendor-snapshot`; every OS/Python
+job downloads that same snapshot, verifies it offline, then tests it. Upstream
+changes during the matrix cannot select different source commits.
 
-## Local preparation
+CI uses the shared stdlib tool at
+`90bc069c33901bd4b5373eb02311026e0acf2e2e`. It checks the baseline copies,
+restores them from locked commits, then **automatically updates** the allowlisted
+files from their public upstream refs and runs the existing tests. Each upstream
+ref resolves once per workflow run; the resulting full SHA and hashes are
+recorded in the CI checkout before tests run. A separate Actions artifact
+preserves the lock and vendor bytes used by that run, including when tests fail. Unchanged selected bytes do not
+churn the baseline pins. The updater itself stays at its reviewed full SHA.
 
-A normal checkout can run `python -m pytest` offline with test dependencies
-installed from `tests/requirements.txt`. To use the same placement/update tool:
+There is no manual step required for normal push/PR CI. An ALM agent can use the
+same commands after checking out the pinned shared tool in `.vendor-sync-tools`:
 
 ```sh
 git clone https://github.com/myon-bioinformatics/myon-bioinformatics.git .vendor-sync-tools
-git -C .vendor-sync-tools checkout ec71deac0b4232132130021037482b3f97670805
-python .vendor-sync-tools/vendor_sync.py check
-python .vendor-sync-tools/vendor_sync.py materialize
-```
-
-`check` is offline. `materialize` restores missing/wrong locked copies after hash
-verification. `update` must start from correct locked files; it rejects local
-edits before networking. To prepare a candidate in a disposable clean checkout:
-
-```sh
-python .vendor-sync-tools/vendor_sync.py update
+git -C .vendor-sync-tools checkout 90bc069c33901bd4b5373eb02311026e0acf2e2e
+python -S .vendor-sync-tools/vendor_sync.py check
+python -S .vendor-sync-tools/vendor_sync.py materialize
+python -S .vendor-sync-tools/vendor_sync.py update
+python -S .vendor-sync-tools/vendor_sync.py check
 python -m pytest
 ```
 
-All entries track `refs/heads/main` explicitly, avoiding a branch/tag name
-collision. A group resolves once; all related files move together if any selected
-bytes change. Source pins do not churn on unrelated upstream commits. Shared-tool
-and workflow pins are a separate infrastructure update; the consumer regression
-requires CI checkout, reusable workflow ref and tool-commit to be identical.
+A dispatch caller may select `vendor-mode=locked` to test only the recorded
+baseline; default dispatch and ordinary push/PR CI use `update`. Offline local
+pytest continues to use checked-in copies and does not initiate downloads.
 
-## Scheduled proposals: prepared, not activated
-
-`.github/workflows/vendor-update.yml` provides Monday 02:23 UTC (11:23 JST) and
-manual-dispatch proposals through the shared workflow. It is gated by the Actions
-repository variable `VENDOR_UPDATES_ENABLED` being exactly `true`. No flag or
-secret is configured by this change; the job is skipped until enabled.
-
-Before enabling, configure an App installation token or suitable PAT as the
-Actions secret `VENDOR_UPDATE_TOKEN`, then set the repository variable above.
-For installation tokens, arrange token generation/refresh before enabling; a
-static stored installation token expires. Do not paste credentials into issues
-or PR comments. The authenticated real-GitHub proposal/consumer-CI smoke test is
-still pending. Manual placement and normal CI do not require this write token.
-
-During the first activated pilot, dispatch once and verify the PR tree, ordinary
-consumer CI and raw/native/compact evidence; dispatch again with the same source
-state and verify no duplicate open PR. Updates propose verified source files and
-the lock together and do not merge automatically. Closed candidates may be
-re-proposed. Unexpected remote branch changes fail the proposal rather than
-force-pushing. Track activation/results in shared issue
-[myon-bioinformatics#35](https://github.com/myon-bioinformatics/myon-bioinformatics/issues/35).
+Public source and metadata downloads are anonymous. API 403/429 uses a
+temporary public Git snapshot with credential helpers disabled; it retains the
+resolved SHA when available. Failure of both paths stays nonzero. No dedicated token, secret,
+enable variable, scheduled PR creator, commit, push or automatic merge remains
+in this vendor path. Both CI checkouts disable persisted Git credentials.
+Changes exist only in the disposable run checkout and are not written back to
+main. Existing test failures retain their exit status and evidence. Download,
+hash-verification or unrecoverable fetch failures fail the update and CI; they never
+silently fall back to old files. Existing JUnit/native artifact handling and
+Pages/runtime policies are unchanged.

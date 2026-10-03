@@ -31,13 +31,44 @@ def test_vendor_lock_provenance():
     assert Path(xprobe.__file__).resolve() == ROOT / 'vendor/xprobe.py'
 
 
-def test_shared_workflow_and_tool_pins_match():
-    workflow = (ROOT / '.github/workflows/vendor-update.yml').read_text(encoding='utf-8')
-    ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
-    ref = re.search(r'reusable-vendor-update.yml@([0-9a-f]{40})', workflow).group(1)
-    tool = re.search(r'tool-commit: ([0-9a-f]{40})', workflow).group(1)
-    checkout = re.search(r'repository: myon-bioinformatics/myon-bioinformatics\n\s+ref: ([0-9a-f]{40})', ci).group(1)
-    assert ref == tool == checkout
+def test_public_vendor_ci_updates_without_repository_writes():
+    import yaml
+    ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    jobs = ci['jobs']
+    resolve = jobs['resolve-vendor']['steps']
+    test = jobs['test']['steps']
+    update = next(s for s in resolve if s.get('name') == 'Update public vendor files for this run')
+    assert update['if'] == "inputs.vendor-mode != 'locked'"
+    assert update['shell'] == 'bash'
+    assert not any(word in update['run'] for word in ('|| true', '|| :', 'set +e'))
+    assert 'continue-on-error' not in update
+    assert update['run'].splitlines() == [
+        'python -S .vendor-sync-tools/vendor_sync.py update --manifest vendor.lock.json',
+        'python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json']
+    assert ci['on']['workflow_dispatch']['inputs']['vendor-mode']['default'] == 'update'
+    assert jobs['test']['needs'] == 'resolve-vendor'
+    assert sum('vendor_sync.py update' in s.get('run', '') for steps in (resolve, test) for s in steps) == 1
+    download = next(i for i,s in enumerate(test) if s.get('uses', '').startswith('actions/download-artifact@'))
+    verify = next(i for i,s in enumerate(test) if s.get('name') == 'Verify resolved vendor snapshot')
+    assert test[download]['with']['name'] == 'vendor-snapshot'
+    assert download < verify
+    assert 'vendor_sync.py check' in test[verify]['run']
+    assert all('vendor_sync.py update' not in s.get('run', '') for s in test)
+    for steps, name in ((resolve, 'Preserve resolved vendor snapshot'), (test, 'Preserve vendor lock used by this run')):
+        upload = next(s for s in steps if s.get('name') == name)
+        assert upload['if'] == 'always()'
+        assert upload['with']['if-no-files-found'] == 'error'
+        assert set(upload['with']['path'].splitlines()) == {'vendor.lock.json', 'vendor/'}
+    pins = [s['with']['ref'] for steps in (resolve, test) for s in steps
+            if s.get('with', {}).get('repository') == 'myon-bioinformatics/myon-bioinformatics']
+    assert len(pins) == 2 and len(set(pins)) == 1
+    assert all(re.fullmatch('[0-9a-f]{40}', pin) for pin in pins)
+    assert not (ROOT / '.github/workflows/vendor-update.yml').exists()
+    assert ci['permissions'] == {'contents': 'read'}
+    for steps in (resolve, test):
+        assert all(s['with']['persist-credentials'] == 'false' for s in steps if s.get('uses','').startswith('actions/checkout@'))
+    text = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+    assert not any(word in text for word in ('VENDOR_UPDATE_TOKEN', 'VENDOR_UPDATES_ENABLED', 'GH_TOKEN', 'git push', 'git commit', 'gh pr', 'continue-on-error'))
 
 
 def test_git_checkout_retains_locked_bytes_with_autocrlf(tmp_path):
