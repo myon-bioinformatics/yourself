@@ -33,11 +33,34 @@ jobs:
           cache-dependency-path: tests/requirements.txt
       - name: Install test dependencies
         run: python -m pip install -r tests/requirements.txt
+      - name: Fetch pinned xprobe JUnit importer
+        shell: bash
+        env:
+          XPROBE_COMMIT: 37d582ee4039d2803335b54e855ed770caedabfc
+          XPROBE_BLOB: 8cc1abbaf4269e5298de44f1b4ce7de692ec9ae2
+        run: |
+          set -euo pipefail
+          mkdir -p build/shared
+          rm -f build/shared/xprobe.py
+          curl -fsSLo build/shared/xprobe.py.tmp "https://raw.githubusercontent.com/myon-bioinformatics/xprobe/$XPROBE_COMMIT/xprobe.py"
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          data = Path("build/shared/xprobe.py.tmp").read_bytes()
+          actual = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+          if actual != os.environ["XPROBE_BLOB"]:
+              raise SystemExit("Importer verification failed")
+          PY
+          mv build/shared/xprobe.py.tmp build/shared/xprobe.py
       - name: Compile artifact and CLI
         run: python -m py_compile yourself.py scripts/yourself_cli.py vendor/xprobe_pytest.py
       - name: Verify standalone runtime
         run: python -S -c "import yourself"
       - name: Test with branch coverage
+        env:
+          PYTHONPATH: build/shared
+          YOURSELF_FAILURE_EVIDENCE: controlled-failure
         run: python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/pytest-events.jsonl --xprobe-repository=myon-bioinformatics/yourself --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90 --junitxml=reports/junit.xml
       - name: Preserve test report (including failed tests)
         if: always()
@@ -47,3 +70,23 @@ jobs:
           path: reports/
           if-no-files-found: warn
           retention-days: 14
+      - name: Preserve controlled child evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: controlled-failure-${{ matrix.os }}-py${{ matrix.python }}
+          path: controlled-failure/
+          if-no-files-found: error
+          retention-days: 14
+
+  failure-identity:
+    needs: test
+    if: always()
+    permissions:
+      contents: read
+      actions: read
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-junit-identity.yml@4dfda95d6573250477f991a0421fa6acb9bc0258
+    with:
+      expected-reports: '["test-report-ubuntu-latest-py3.10/junit.xml","test-report-ubuntu-latest-py3.11/junit.xml","test-report-ubuntu-latest-py3.12/junit.xml","test-report-ubuntu-latest-py3.13/junit.xml","test-report-ubuntu-latest-py3.14/junit.xml","test-report-windows-latest-py3.12/junit.xml","test-report-macos-latest-py3.12/junit.xml"]'
+      artifact-pattern: "test-report-*"
+      output-artifact: "failure-identity"
