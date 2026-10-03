@@ -40,6 +40,24 @@ def test_shared_workflow_and_tool_pins_match():
     assert ref == tool == checkout
 
 
+def test_git_checkout_retains_locked_bytes_with_autocrlf(tmp_path):
+    # Exercise Windows-style checkout conversion, particularly LICENSE files.
+    subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(tmp_path), 'config', 'core.autocrlf', 'true'], check=True)
+    shutil.copyfile(ROOT / '.gitattributes', tmp_path / '.gitattributes')
+    lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
+    files = [entry['destination'] for entry in lock['files']]
+    for relative in files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, path)
+    subprocess.run(['git', '-C', str(tmp_path), 'add', '--', '.gitattributes', *files], check=True, capture_output=True)
+    for relative in files:
+        (tmp_path / relative).unlink()
+    subprocess.run(['git', '-C', str(tmp_path), 'checkout', '--', *files], check=True, capture_output=True)
+    assert all((tmp_path / relative).read_bytes() == (ROOT / relative).read_bytes() for relative in files)
+
+
 @pytest.mark.parametrize("junit", [False, True])
 def test_native_failure_evidence(tmp_path, junit):
     suite = tmp_path / 'test_sample.py'

@@ -4,6 +4,8 @@
 and upstream LICENSE. All three remain test-only and byte-for-byte upstream
 copies. `yourself.py` remains a standalone stdlib module. Source commit/blob and
 SHA-256 values are explicit; normal CI never resolves upstream main.
+Git attributes disable text conversion for vendor copies, preserving upstream
+bytes (including LICENSE line endings) on Windows as well as Unix checkouts.
 
 The shared tool/workflow is pinned to merged commit
 `ec71deac0b4232132130021037482b3f97670805`. CI checks the checked-in copies first,
