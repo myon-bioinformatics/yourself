@@ -1,5 +1,47 @@
 # Native pytest evidence
 
+## Same-run controlled child and JUnit collection
+
+`test_native_failure_evidence` runs its existing child fixture with and without
+JUnit. Actual `yourself.to_json()` output is compared with deliberately wrong
+dummy expectations. Both modes retain exit 1 and identical full native phase
+counts, validated by shared `pytest_receipt()`. The JUnit-enabled run imports
+five identities with `cases_from_junit()`: two parameterized call failures,
+setup error, teardown error and strict XPASS. Pass/skip and xfail controls remain.
+
+The fixture-local correspondence maps call failure/strict XPASS to JUnit failure,
+and setup/teardown failure to error. JUnit loses native phase information and
+does not distinguish xfail from ordinary skip. Parameter variants retain native
+hashes but share compact JUnit display names; both records are kept. Raw
+parameter/message/stdout/stderr sentinels must be present before asserting that
+both compact schemas exclude them. No reproduction input is inferred.
+Generic classification, malformed receipt and interruption coverage stays
+upstream in [xprobe #7](https://github.com/myon-bioinformatics/xprobe/pull/7).
+
+The test-only xprobe adapter, importer and LICENSE are pinned in
+`vendor.lock.json`. CI verifies and recreates their locked bytes through the
+shared vendor tool; local full-suite runs use `python -m pytest` directly with
+checked-in copies. Missing importer fails collection rather than silently
+skipping this test. See [placement and update automation](vendor-automation.md).
+The controlled child sets an explicit rootdir, preserving `test_sample.py` in
+native node IDs and `test_sample` as the JUnit class despite `-c os.devnull`.
+
+With `YOURSELF_FAILURE_EVIDENCE` set to a fresh directory, child raw XML/native
+JSONL and exit status are saved before validation; compact identities and
+validated receipt are saved as soon as computed. CI uploads these separately as
+`controlled-failure-<os>-py<python>` (14 days). Reused destinations are rejected.
+Timeouts before subprocess completion are outside this retention example.
+Public-repository artifacts are downloadable by signed-in users; controlled
+reports contain dummy sentinels. No raw XML is published to Pages.
+
+The canonical reusable JUnit workflow at `4dfda95d6573250477f991a0421fa6acb9bc0258`
+collects exactly seven ordinary `test-report-<os>-py<python>/junit.xml` reports.
+Its `test-report-*` download pattern excludes controlled evidence. Collection
+runs after a failed producer; missing reports mean incomplete collection.
+The producer's pytest result is never overridden by collector success.
+The expected failing child makes the outer regression green only when its
+observations match; unexpected outer failures still fail CI.
+
 CI writes `reports/pytest-events.jsonl` through the shared xprobe pytest adapter
 and preserves it with the JUnit report, including when tests fail. All seven
 OS/Python jobs use the adapter. The runtime `yourself.py` remains stdlib-only.
@@ -10,10 +52,10 @@ For local runs, choose a fresh destination (existing evidence is never overwritt
 python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/local-001.jsonl --xprobe-repository=myon-bioinformatics/yourself
 ```
 
-The vendored adapter is byte-for-byte from xprobe commit
-`326acd667e13b21bf53ccc1590af960edf8cbf6c`, `scripts/xprobe_pytest.py`.
-Its license and SHA-256/Git blob provenance live alongside it in `vendor/`.
-Update from a reviewed upstream commit and refresh the provenance together.
+The vendored adapter is byte-for-byte upstream `scripts/xprobe_pytest.py`.
+Its license is preserved in `vendor/`; commit/blob/SHA-256 provenance for all
+three shared files lives in `vendor.lock.json`. Update proposals refresh files
+and this lock together, then ordinary CI checks compatibility.
 
 Records distinguish setup/call/teardown and collection, with native failure,
 error, skip, xfail, xpass and strict XPASS outcomes. Records describe phases,

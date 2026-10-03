@@ -1,3 +1,4 @@
 # Test-only dependencies; the vendorable module has no runtime dependencies.
 pytest>=8
 pytest-cov>=5
+PyYAML>=6
