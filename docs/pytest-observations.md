@@ -18,12 +18,13 @@ both compact schemas exclude them. No reproduction input is inferred.
 Generic classification, malformed receipt and interruption coverage stays
 upstream in [xprobe #7](https://github.com/myon-bioinformatics/xprobe/pull/7).
 
-CI fetches the test-only xprobe module at merged commit
-`37d582ee4039d2803335b54e855ed770caedabfc`, verifying Git blob
-`8cc1abbaf4269e5298de44f1b4ce7de692ec9ae2` before import.
-The existing vendored adapter is unchanged. For local full-suite runs, use the
-workflow's fetch/verify step, then `PYTHONPATH=build/shared python -m pytest`.
-Missing importer fails collection rather than silently skipping this test.
+The test-only xprobe adapter, importer and LICENSE are pinned in
+`vendor.lock.json`. CI verifies and recreates their locked bytes through the
+shared vendor tool; local full-suite runs use `python -m pytest` directly with
+checked-in copies. Missing importer fails collection rather than silently
+skipping this test. See [placement and update automation](vendor-automation.md).
+The controlled child sets an explicit rootdir, preserving `test_sample.py` in
+native node IDs and `test_sample` as the JUnit class despite `-c os.devnull`.
 
 With `YOURSELF_FAILURE_EVIDENCE` set to a fresh directory, child raw XML/native
 JSONL and exit status are saved before validation; compact identities and
@@ -51,10 +52,10 @@ For local runs, choose a fresh destination (existing evidence is never overwritt
 python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/local-001.jsonl --xprobe-repository=myon-bioinformatics/yourself
 ```
 
-The vendored adapter is byte-for-byte from xprobe commit
-`326acd667e13b21bf53ccc1590af960edf8cbf6c`, `scripts/xprobe_pytest.py`.
-Its license and SHA-256/Git blob provenance live alongside it in `vendor/`.
-Update from a reviewed upstream commit and refresh the provenance together.
+The vendored adapter is byte-for-byte upstream `scripts/xprobe_pytest.py`.
+Its license is preserved in `vendor/`; commit/blob/SHA-256 provenance for all
+three shared files lives in `vendor.lock.json`. Update proposals refresh files
+and this lock together, then ordinary CI checks compatibility.
 
 Records distinguish setup/call/teardown and collection, with native failure,
 error, skip, xfail, xpass and strict XPASS outcomes. Records describe phases,
