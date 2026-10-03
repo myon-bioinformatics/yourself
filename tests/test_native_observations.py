@@ -31,13 +31,24 @@ def test_vendor_lock_provenance():
     assert Path(xprobe.__file__).resolve() == ROOT / 'vendor/xprobe.py'
 
 
-def test_shared_workflow_and_tool_pins_match():
-    workflow = (ROOT / '.github/workflows/vendor-update.yml').read_text(encoding='utf-8')
+def test_public_vendor_ci_updates_without_repository_writes():
     ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
-    ref = re.search(r'reusable-vendor-update.yml@([0-9a-f]{40})', workflow).group(1)
-    tool = re.search(r'tool-commit: ([0-9a-f]{40})', workflow).group(1)
-    checkout = re.search(r'repository: myon-bioinformatics/myon-bioinformatics\n\s+ref: ([0-9a-f]{40})', ci).group(1)
-    assert ref == tool == checkout
+    assert re.search(r'repository: myon-bioinformatics/myon-bioinformatics\n\s+ref: [0-9a-f]{40}\n', ci)
+    assert not (ROOT / '.github/workflows/vendor-update.yml').exists()
+    assert 'options: [update, locked]' in ci
+    assert 'default: update' in ci
+    assert "if: inputs.vendor-mode != 'locked'" in ci
+    # Push/PR have no input and therefore update too; only explicit locked opts out.
+    restore = ci.index('vendor_sync.py materialize')
+    update = ci.index('vendor_sync.py update')
+    check = ci.index('vendor_sync.py check', update)
+    test = ci.index('python -m pytest', check)
+    assert restore < update < check < test
+    assert ci.count('persist-credentials: false') == 2
+    assert 'contents: write' not in ci and 'pull-requests: write' not in ci
+    assert not any(value in ci for value in (
+        'VENDOR_UPDATE_TOKEN', 'VENDOR_UPDATES_ENABLED', 'update-token:',
+        'GH_TOKEN', 'git push', 'git commit', 'gh pr', 'continue-on-error'))
 
 
 def test_git_checkout_retains_locked_bytes_with_autocrlf(tmp_path):
