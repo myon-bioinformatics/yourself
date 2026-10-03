@@ -16,7 +16,54 @@ permissions:
   contents: read
 
 jobs:
+  resolve-vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Fetch pinned shared vendor tool
+        uses: actions/checkout@v7
+        with:
+          repository: myon-bioinformatics/myon-bioinformatics
+          ref: 621ff651a25e583e62d7d562a01b0340674366f8
+          path: .vendor-sync-tools
+          persist-credentials: false
+      - name: Verify checked-in vendor copies
+        run: python -S .vendor-sync-tools/vendor_sync.py check
+      - name: Recreate locked vendor files from GitHub
+        shell: bash
+        run: |
+          python -S - <<'PY'
+          from pathlib import Path
+          for name in ('xprobe.py', 'xprobe_pytest.py', 'xprobe-LICENSE'):
+              Path('vendor', name).unlink()
+          PY
+          python -S .vendor-sync-tools/vendor_sync.py materialize
+          python -S .vendor-sync-tools/vendor_sync.py check
+      - name: Update public vendor files for this run
+        shell: bash
+        if: inputs.vendor-mode != 'locked'
+        run: |
+          python -S .vendor-sync-tools/vendor_sync.py update --manifest vendor.lock.json
+          python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
+      - name: Preserve resolved vendor snapshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vendor-snapshot
+          path: |
+            vendor.lock.json
+            vendor/
+          if-no-files-found: error
+          retention-days: 14
+
   test:
+    needs: resolve-vendor
     name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -48,23 +95,13 @@ jobs:
           ref: 621ff651a25e583e62d7d562a01b0340674366f8
           path: .vendor-sync-tools
           persist-credentials: false
-      - name: Verify checked-in vendor copies
-        run: python .vendor-sync-tools/vendor_sync.py check
-      - name: Recreate locked vendor files from GitHub
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          for name in ('xprobe.py', 'xprobe_pytest.py', 'xprobe-LICENSE'):
-              Path('vendor', name).unlink()
-          PY
-          python .vendor-sync-tools/vendor_sync.py materialize
-          python .vendor-sync-tools/vendor_sync.py check
-      - name: Update public vendor files for this run
-        if: inputs.vendor-mode != 'locked'
-        run: |
-          python -S .vendor-sync-tools/vendor_sync.py update --manifest vendor.lock.json
-          python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
+      - name: Download resolved vendor snapshot
+        uses: actions/download-artifact@v8
+        with:
+          name: vendor-snapshot
+          path: .
+      - name: Verify resolved vendor snapshot
+        run: python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
       - name: Compile artifact and CLI
         run: python -m py_compile yourself.py scripts/yourself_cli.py vendor/xprobe_pytest.py
       - name: Verify standalone runtime
@@ -95,7 +132,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: vendor-lock-${{ matrix.os }}-py${{ matrix.python }}
-          path: vendor.lock.json
+          path: |
+            vendor.lock.json
+            vendor/
           if-no-files-found: error
           retention-days: 14
 
