@@ -15,9 +15,9 @@ import stat
 import sys
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown",
-           "command_inventory", "workspace_facts", "listener_ports", "diagnose"]
+           "command_inventory", "workspace_facts", "listener_ports", "diagnose", "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -126,6 +126,10 @@ _COMMANDS = {
     # Discover their presence, but do not run them as an environment probe.
     'flutter': None, 'dart': None, 'npm': None, 'pytest': None,
     'goma': None, 'gomacc': None,
+    'gh': None, 'uv': None, 'pip': None, 'pipx': None,
+    'npx': None, 'pnpm': None, 'yarn': None, 'playwright': None,
+    'actionlint': None, 'jq': None, 'curl': None,
+    'ffmpeg': None, 'magick': None, 'tsc': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
@@ -263,3 +267,31 @@ def diagnose(*, directory=None, include_host=False, versions=False,
         except OSError:
             pass
     return facts
+
+
+def main(argv=None):
+    """Direct single-file entry point; no-argument use observes current workspace."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Read-only AI environment introduction")
+    parser.add_argument("--directory", default=".")
+    parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument("--versions", action="store_true")
+    parser.add_argument("--minimal", action="store_true",
+                        help="OS/runtime only; omit workspace and tool observations")
+    args = parser.parse_args(argv)
+    try:
+        facts = collect() if args.minimal else diagnose(
+            directory=args.directory, versions=args.versions)
+    except (OSError, ValueError) as error:
+        print(type(error).__name__, file=sys.stderr)
+        return 2
+    print(to_json(facts) if args.format == "json" else to_markdown(facts), end="")
+    partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
+    partial |= any(row["status"] in ("timeout", "execution_error", "nonzero_exit",
+                                    "unrecognized_version")
+                   for row in facts.get("commands", []))
+    return 2 if partial else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

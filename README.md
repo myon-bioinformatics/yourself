@@ -4,7 +4,7 @@ Single-file, standard-library Python tool for read-only inspection of host, OS, 
 
 ## Design
 
-The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; there is no main/CLI in the artifact and import is inert. The optional CLI lives in `scripts/yourself_cli.py`.
+The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
 
 Python target: 3.10–3.14. Test dependencies are isolated in `tests/requirements.txt`; runtime is standard-library only.
 
@@ -92,3 +92,28 @@ by the shared xprobe importer. This module does not duplicate JUnit parsing.
 
 CI also preserves native pytest JSONL for outcome exploration, including xfail
 and phase errors. See [usage and provenance](docs/pytest-observations.md).
+
+## Direct standalone use (0.3)
+
+```sh
+python yourself.py
+python yourself.py --format json
+python yourself.py --minimal
+```
+
+Python alone is sufficient, including `python -S /path/to/yourself.py`.
+No pip, virtual environment, pytest or JUnit setup is required.
+
+The main is only an entry/formatting layer: default calls existing
+`diagnose(directory=".")` and `to_markdown`; --format json uses `to_json`;
+--minimal calls `collect()`. No new main-specific diagnostic engine or
+project recommendation function is introduced.
+
+The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
+jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
+even with --versions. Presence is not authentication/build/service readiness.
+--versions remains explicit opt-in to the existing fixed allowlist.
+No test/build/browser execution, installs, repairs, environment dump or
+project-content reading. Workspace markers and disk facts use existing APIs.
+Import stays inert, APIs remain reusable, and existing scope/caveats apply.
+Exit 2 marks invalid/partial observations; output goes to stdout only.

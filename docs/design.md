@@ -3,7 +3,7 @@
 Provide a compact, measured introduction to the current execution environment for Copilot or another assistant, reducing repeated environment exploration and token use.
 
 - Read-only observation; no repair, service start, build, install or remote communication.
-- Standard-library-only single-file artifact, no main and no I/O on import.
+- Standard-library-only single-file artifact, inert import and guarded direct CLI.
 - Selected tool presence, explicitly requested fixed version observations, workspace-marker and storage facts, optional local listener-port observation.
 - Version observations use shell=False with bounded time and never return raw tool stdout/stderr or environment values.
 - Docker and goma/C++ tool context are relevant; Redis/Celery-specific integration is excluded.
