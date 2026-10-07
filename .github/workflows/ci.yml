@@ -30,17 +30,28 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 08dc3757deeb930c950bdcc6bd55ec3112ba49fc
+          ref: 872951df1653c2d9dc10d35cd7358d979cc344fc
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Verify checked-in vendor copies
         run: python -S .vendor-sync-tools/vendor_sync.py check
+      - name: Exercise canonical GHI enrollment
+        shell: bash
+        run: |
+          python -S - <<'PY'
+          from pathlib import Path
+          for name in ('gh_identity.py', 'gh_identity-LICENSE'):
+              Path('vendor', name).unlink()
+          PY
+          python -S .vendor-sync-tools/vendor_sync.py enroll --manifest vendor.lock.json | tee vendor-enrollment.json
+          python -S -m json.tool vendor-enrollment.json > /dev/null
+          python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
       - name: Recreate locked vendor files from GitHub
         shell: bash
         run: |
           python -S - <<'PY'
           from pathlib import Path
-          for name in ('xprobe.py', 'xprobe_pytest.py', 'xprobe-LICENSE'):
+          for name in ('xprobe.py', 'xprobe_pytest.py', 'xprobe-LICENSE', 'gh_identity.py', 'gh_identity-LICENSE'):
               Path('vendor', name).unlink()
           PY
           python -S .vendor-sync-tools/vendor_sync.py materialize
@@ -49,7 +60,8 @@ jobs:
         shell: bash
         if: inputs.vendor-mode != 'locked'
         run: |
-          python -S .vendor-sync-tools/vendor_sync.py update --manifest vendor.lock.json
+          python -S .vendor-sync-tools/vendor_sync.py promote --manifest vendor.lock.json | tee vendor-promotion.json
+          python -S -m json.tool vendor-promotion.json > /dev/null
           python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
       - name: Preserve resolved vendor snapshot
         if: always()
@@ -58,7 +70,13 @@ jobs:
           name: vendor-snapshot
           path: |
             vendor.lock.json
-            vendor/
+            vendor-enrollment.json
+            ${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}
+            vendor/xprobe.py
+            vendor/xprobe_pytest.py
+            vendor/xprobe-LICENSE
+            vendor/gh_identity.py
+            vendor/gh_identity-LICENSE
           if-no-files-found: error
           retention-days: 14
 
@@ -92,7 +110,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 08dc3757deeb930c950bdcc6bd55ec3112ba49fc
+          ref: 872951df1653c2d9dc10d35cd7358d979cc344fc
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Download resolved vendor snapshot
@@ -102,6 +120,8 @@ jobs:
           path: .
       - name: Verify resolved vendor snapshot
         run: python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
+      - name: Verify enrolled GHI is stdlib-loadable
+        run: python -S -c "import importlib.util; s=importlib.util.spec_from_file_location('enrolled_ghi','vendor/gh_identity.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert hasattr(m,'capabilities')"
       - name: Compile artifact and CLI
         run: python -m py_compile yourself.py scripts/yourself_cli.py vendor/xprobe_pytest.py
       - name: Verify standalone runtime
@@ -134,7 +154,13 @@ jobs:
           name: vendor-lock-${{ matrix.os }}-py${{ matrix.python }}
           path: |
             vendor.lock.json
-            vendor/
+            vendor-enrollment.json
+            ${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}
+            vendor/xprobe.py
+            vendor/xprobe_pytest.py
+            vendor/xprobe-LICENSE
+            vendor/gh_identity.py
+            vendor/gh_identity-LICENSE
           if-no-files-found: error
           retention-days: 14
 

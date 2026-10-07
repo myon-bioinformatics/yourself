@@ -17,12 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_vendor_lock_provenance():
     lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
     assert lock['schema'] == 'vendor-lock/1'
-    assert {(entry['source'], entry['destination']) for entry in lock['files']} == {
+    xprobe_entries = [entry for entry in lock['files']
+                      if entry['repository'] == 'myon-bioinformatics/xprobe']
+    assert {(entry['source'], entry['destination']) for entry in xprobe_entries} == {
         ('scripts/xprobe_pytest.py', 'vendor/xprobe_pytest.py'),
         ('xprobe.py', 'vendor/xprobe.py'), ('LICENSE', 'vendor/xprobe-LICENSE')}
-    assert len(lock['files']) == 3
+    assert len(xprobe_entries) == 3
+    ghi_entries = [entry for entry in lock['files']
+                   if entry['repository'] == 'myon-bioinformatics/gh_identity']
+    assert {(entry['source'], entry['destination']) for entry in ghi_entries} == {
+        ('gh_identity.py', 'vendor/gh_identity.py'),
+        ('LICENSE', 'vendor/gh_identity-LICENSE')}
+    assert len(ghi_entries) == 2
     for entry in lock['files']:
-        assert entry['repository'] == 'myon-bioinformatics/xprobe'
         assert entry['ref'] == 'refs/heads/main'
         assert re.fullmatch(r'[0-9a-f]{40}', entry['commit'])
         data = (ROOT / entry['destination']).read_bytes()
@@ -43,22 +50,38 @@ def test_public_vendor_ci_updates_without_repository_writes():
     assert not any(word in update['run'] for word in ('|| true', '|| :', 'set +e'))
     assert 'continue-on-error' not in update
     assert update['run'].splitlines() == [
-        'python -S .vendor-sync-tools/vendor_sync.py update --manifest vendor.lock.json',
+        'python -S .vendor-sync-tools/vendor_sync.py promote --manifest vendor.lock.json | tee vendor-promotion.json',
+        'python -S -m json.tool vendor-promotion.json > /dev/null',
         'python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json']
     assert ci['on']['workflow_dispatch']['inputs']['vendor-mode']['default'] == 'update'
     assert jobs['test']['needs'] == 'resolve-vendor'
-    assert sum('vendor_sync.py update' in s.get('run', '') for steps in (resolve, test) for s in steps) == 1
+    assert sum('vendor_sync.py promote' in s.get('run', '') for steps in (resolve, test) for s in steps) == 1
+    baseline = next(i for i,s in enumerate(resolve) if s.get('name') == 'Verify checked-in vendor copies')
+    enroll = next(i for i,s in enumerate(resolve) if s.get('name') == 'Exercise canonical GHI enrollment')
+    materialize = next(i for i,s in enumerate(resolve) if s.get('name') == 'Recreate locked vendor files from GitHub')
+    promotion = resolve.index(update)
+    assert baseline < enroll < materialize < promotion
+    assert 'if' not in resolve[enroll]
+    assert 'vendor_sync.py enroll --manifest vendor.lock.json | tee vendor-enrollment.json' in resolve[enroll]['run']
+    assert all(name in resolve[materialize]['run'] for name in ('gh_identity.py', 'gh_identity-LICENSE'))
     download = next(i for i,s in enumerate(test) if s.get('uses', '').startswith('actions/download-artifact@'))
     verify = next(i for i,s in enumerate(test) if s.get('name') == 'Verify resolved vendor snapshot')
     assert test[download]['with']['name'] == 'vendor-snapshot'
-    assert download < verify
+    smoke = next(i for i,s in enumerate(test) if s.get('name') == 'Verify enrolled GHI is stdlib-loadable')
+    run_tests = next(i for i,s in enumerate(test) if s.get('name') == 'Test with branch coverage')
+    assert download < verify < smoke < run_tests
     assert 'vendor_sync.py check' in test[verify]['run']
-    assert all('vendor_sync.py update' not in s.get('run', '') for s in test)
+    assert all('vendor_sync.py promote' not in s.get('run', '') for s in test)
     for steps, name in ((resolve, 'Preserve resolved vendor snapshot'), (test, 'Preserve vendor lock used by this run')):
         upload = next(s for s in steps if s.get('name') == name)
         assert upload['if'] == 'always()'
         assert upload['with']['if-no-files-found'] == 'error'
-        assert set(upload['with']['path'].splitlines()) == {'vendor.lock.json', 'vendor/'}
+        lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
+        assert set(upload['with']['path'].splitlines()) == {
+            'vendor.lock.json', 'vendor-enrollment.json',
+            "${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}",
+            *(entry['destination'] for entry in lock['files']),
+        }
     pins = [s['with']['ref'] for steps in (resolve, test) for s in steps
             if s.get('with', {}).get('repository') == 'myon-bioinformatics/myon-bioinformatics']
     assert len(pins) == 2 and len(set(pins)) == 1
