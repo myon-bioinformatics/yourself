@@ -76,12 +76,7 @@ def test_public_vendor_ci_updates_without_repository_writes():
         upload = next(s for s in steps if s.get('name') == name)
         assert upload['if'] == 'always()'
         assert upload['with']['if-no-files-found'] == 'error'
-        lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
-        assert set(upload['with']['path'].splitlines()) == {
-            'vendor.lock.json', 'vendor-enrollment.json',
-            "${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}",
-            *(entry['destination'] for entry in lock['files']),
-        }
+        assert upload['with']['path'].startswith('build/vendor-evidence-')
     pins = [s['with']['ref'] for steps in (resolve, test) for s in steps
             if s.get('with', {}).get('repository') == 'myon-bioinformatics/myon-bioinformatics']
     assert len(pins) == 2 and len(set(pins)) == 1
