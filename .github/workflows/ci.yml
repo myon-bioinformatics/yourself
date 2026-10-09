@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 872951df1653c2d9dc10d35cd7358d979cc344fc
+          ref: 380d877cd85837f36cf6030d626ee8bb7dfa28cb
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Verify checked-in vendor copies
@@ -63,20 +63,22 @@ jobs:
           python -S .vendor-sync-tools/vendor_sync.py promote --manifest vendor.lock.json | tee vendor-promotion.json
           python -S -m json.tool vendor-promotion.json > /dev/null
           python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
+      - name: Stage canonical vendor evidence
+        if: always()
+        shell: bash
+        env:
+          VENDOR_EVIDENCE_KIND: ${{ inputs.vendor-mode == 'locked' && 'locked' || 'candidate' }}
+        run: >-
+          python -S .vendor-sync-tools/vendor_stage.py
+          --manifest vendor.lock.json --kind "$VENDOR_EVIDENCE_KIND" --output build/vendor-evidence-candidate
+          --runtime-evidence vendor-enrollment.json
+          --promotion-receipt vendor-promotion.json
       - name: Preserve resolved vendor snapshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vendor-snapshot
-          path: |
-            vendor.lock.json
-            vendor-enrollment.json
-            ${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}
-            vendor/xprobe.py
-            vendor/xprobe_pytest.py
-            vendor/xprobe-LICENSE
-            vendor/gh_identity.py
-            vendor/gh_identity-LICENSE
+          path: build/vendor-evidence-candidate
           if-no-files-found: error
           retention-days: 14
 
@@ -110,7 +112,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 872951df1653c2d9dc10d35cd7358d979cc344fc
+          ref: 380d877cd85837f36cf6030d626ee8bb7dfa28cb
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Download resolved vendor snapshot
@@ -147,20 +149,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Stage canonical vendor evidence
+        if: always()
+        shell: bash
+        env:
+          VENDOR_EVIDENCE_KIND: ${{ inputs.vendor-mode == 'locked' && 'locked' || 'candidate' }}
+        run: >-
+          python -S .vendor-sync-tools/vendor_stage.py
+          --manifest vendor.lock.json --kind "$VENDOR_EVIDENCE_KIND" --output build/vendor-evidence-test
+          --runtime-evidence vendor-enrollment.json
+          --promotion-receipt vendor-promotion.json
       - name: Preserve vendor lock used by this run
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vendor-lock-${{ matrix.os }}-py${{ matrix.python }}
-          path: |
-            vendor.lock.json
-            vendor-enrollment.json
-            ${{ inputs.vendor-mode != 'locked' && 'vendor-promotion.json' || '' }}
-            vendor/xprobe.py
-            vendor/xprobe_pytest.py
-            vendor/xprobe-LICENSE
-            vendor/gh_identity.py
-            vendor/gh_identity-LICENSE
+          path: build/vendor-evidence-test
           if-no-files-found: error
           retention-days: 14
 
