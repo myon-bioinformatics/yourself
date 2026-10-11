@@ -64,7 +64,8 @@ ipv4: 172.17.0.5, 127.0.0.1
 interfaces: eth0(up), lo(unknown)
 default_gateway: 172.17.0.1 via eth0
 dns: 127.0.0.11
-proxy.HTTPS_PROXY: false
+proxy.HTTPS_PROXY: true
+proxy.no_proxy_covers.localhost: false
 cpus: 8 (usable 8, cgroup limit 2.0)
 memory: 3.1 GiB available of 15.5 GiB (cgroup limit 4.0 GiB, swap 0.0 GiB)
 load: 0.42 0.30 0.21
@@ -87,6 +88,8 @@ missing), never an error of the report:
 
 ```text
 hosts.localhost: 127.0.0.1, ::1
+localhost.ipv6_loopback: true
+localhost.resolves_to: true ::1             localhost
 docker.context: true default
 docker.server: true 27.3.1
 docker.networks: true bridge bridge local; host host local; none null local
@@ -100,8 +103,14 @@ gpu: false (not_installed)
 `127.0.0.1` and `::1`, a server bound only to `127.0.0.1` may not answer on
 `localhost`; `listening` shows the bind address of every local TCP listener
 for the same reason (`127.0.0.1:5432` is not reachable from another container,
-`0.0.0.0:8080` is). Proxy and CA bundle variables are reported as set/unset only.
-Probes use `docker … --format '{{…}}'` and `nvidia-smi --query-gpu`
+`0.0.0.0:8080` is). `localhost.resolves_to` is the address the system resolver
+gives first (`getent hosts localhost`), and `localhost.ipv6_loopback: false`
+means `::1` cannot answer at all. Proxy and CA bundle variables are reported as
+set/unset only; `proxy.no_proxy_covers.*` says whether `NO_PROXY` exempts
+`localhost`, `127.0.0.1` and `::1` (`*`, `.localhost` and CIDR such as
+`127.0.0.0/8` count) without printing its value — with a proxy set and
+`false` here, requests to a local server go through the proxy.
+Probes use `docker … --format '{{…}}'`, `getent hosts localhost` and `nvidia-smi --query-gpu`
 with `shell=False`, 3 s each, at most 20 lines. `--no-probes` skips them. `--format json|markdown` gives the same facts in other shapes;
 `--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
