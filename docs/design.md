@@ -7,7 +7,8 @@ Provide a compact, measured introduction to the current execution environment fo
 - Selected tool presence, explicitly requested fixed version observations, workspace-marker and storage facts, optional local listener-port observation.
 - Version observations use shell=False with bounded time and never return raw tool stdout/stderr or environment values.
 - Docker and goma/C++ tool context are relevant; Redis/Celery-specific integration is excluded.
-- Git identity and provenance remain the responsibility of the canonical repository metadata producer.
+- Git identity and provenance remain the responsibility of gh_identity (`local-position`, `repo-metadata`); this file has no Git code and no sibling imports.
+- Local network configuration (host name, addresses, interfaces, default route, DNS, proxy set/unset) and container/VM hints are read from local files by default; nothing is sent over the network.
 
 The default path is presence-only. Version commands are opt-in and restricted to a fixed registry. Tools known to bootstrap/initialize are presence-only. Listener-port observation currently supports Linux proc; other platforms explicitly report unsupported rather than claiming no listeners.
 
