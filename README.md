@@ -62,7 +62,27 @@ tool.nvidia-smi: false
 ```
 
 Tools are `true` / `false` presence (versions only with `--versions`). Each key
-appears once. `--format json|markdown` gives the same facts in other shapes;
+appears once.
+
+It also **runs** a few fixed probes and reports each as `true …` or
+`false (reason)`; a failure is a result (the daemon may be down, the tool may be
+missing), never an error of the report:
+
+```text
+hosts.localhost: 127.0.0.1, ::1
+docker.context: true default
+docker.server: true 27.3.1
+docker.networks: true bridge bridge local; host host local; none null local
+docker.bridge: true 172.17.0.0/16 gw=172.17.0.1
+docker.containers: true web nginx:1.27 running 0.0.0.0:8080->80/tcp
+docker.images: true nginx:1.27 192MB; python:3.12-slim 124MB
+gpu: false (not_installed)
+```
+
+`hosts.localhost` lists every `/etc/hosts` mapping: when it shows both
+`127.0.0.1` and `::1`, a server bound only to `127.0.0.1` may not answer on
+`localhost`. Probes use `docker … --format '{{…}}'` and `nvidia-smi --query-gpu`
+with `shell=False`, 3 s each, at most 20 lines. `--no-probes` skips them. `--format json|markdown` gives the same facts in other shapes;
 `--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
 ## CLI
