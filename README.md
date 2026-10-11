@@ -42,6 +42,17 @@ With no options, `yourself.py` prints one `key: value` line per fact, ready to p
 
 ```text
 cwd: /work/app
+user: app (uid 1000, root=false)
+writable_cwd: true
+shell: bash
+lang: C.UTF-8
+timezone: Asia/Tokyo
+local_time: 2026-10-11T22:45:57+09:00
+display: false (headless)
+python_executable: /usr/local/bin/python3
+virtualenv: false
+ca_env.SSL_CERT_FILE: false
+ci: CI=false GITHUB_ACTIONS=false
 os: Linux 6.8.0 x86_64
 os_release: ubuntu 24.04
 python: CPython 3.12.3 64bit
@@ -54,8 +65,14 @@ interfaces: eth0(up), lo(unknown)
 default_gateway: 172.17.0.1 via eth0
 dns: 127.0.0.11
 proxy.HTTPS_PROXY: false
+cpus: 8 (usable 8, cgroup limit 2.0)
+memory: 3.1 GiB available of 15.5 GiB (cgroup limit 4.0 GiB, swap 0.0 GiB)
+load: 0.42 0.30 0.21
+uptime: 3d 4h12m
+open_files_limit: 1048576
 disk_free: 41.2 GiB of 100.0 GiB
 markers: pyproject.toml, Dockerfile
+listening: 0.0.0.0:8080, 127.0.0.1:5432, [::1]:3000
 tool.docker: true
 tool.nvidia-smi: false
 ...
@@ -81,7 +98,10 @@ gpu: false (not_installed)
 
 `hosts.localhost` lists every `/etc/hosts` mapping: when it shows both
 `127.0.0.1` and `::1`, a server bound only to `127.0.0.1` may not answer on
-`localhost`. Probes use `docker … --format '{{…}}'` and `nvidia-smi --query-gpu`
+`localhost`; `listening` shows the bind address of every local TCP listener
+for the same reason (`127.0.0.1:5432` is not reachable from another container,
+`0.0.0.0:8080` is). Proxy and CA bundle variables are reported as set/unset only.
+Probes use `docker … --format '{{…}}'` and `nvidia-smi --query-gpu`
 with `shell=False`, 3 s each, at most 20 lines. `--no-probes` skips them. `--format json|markdown` gives the same facts in other shapes;
 `--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
