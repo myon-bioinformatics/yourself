@@ -15,9 +15,10 @@ import stat
 import sys
 from pathlib import Path
 
-__version__ = "0.3.0"
-__all__ = ["collect", "directory_summary", "to_json", "to_markdown",
-           "command_inventory", "workspace_facts", "listener_ports", "diagnose", "main"]
+__version__ = "0.4.0"
+__all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
+           "command_inventory", "workspace_facts", "listener_ports", "diagnose",
+           "network_facts", "container_facts", "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -130,6 +131,14 @@ _COMMANDS = {
     'npx': None, 'pnpm': None, 'yarn': None, 'playwright': None,
     'actionlint': None, 'jq': None, 'curl': None,
     'ffmpeg': None, 'magick': None, 'tsc': None,
+    # Presence only: what this machine can do (GPU, languages, browsers,
+    # clipboard, cloud/database CLIs). Never executed by this module.
+    'nvidia-smi': None, 'make': None, 'java': None, 'go': None, 'rustc': None,
+    'cargo': None, 'deno': None, 'bun': None, 'chromium': None,
+    'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
+    'wl-copy': None, 'pbcopy': None, 'sqlite3': None, 'psql': None,
+    'kubectl': None, 'terraform': None, 'aws': None, 'gcloud': None,
+    'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
@@ -269,15 +278,173 @@ def diagnose(*, directory=None, include_host=False, versions=False,
     return facts
 
 
+def _hex_ipv4(value):
+    """/proc/net/route stores IPv4 little-endian hex."""
+    raw = int(value, 16)
+    return ".".join(str((raw >> shift) & 255) for shift in (0, 8, 16, 24))
+
+
+def network_facts(*, proc_root="/proc", sys_root="/sys", etc_root="/etc"):
+    """Local network configuration from files only: no packets, DNS or commands.
+
+    Host name, interfaces with state, IPv4/IPv6 addresses, default route and
+    DNS servers. Proxy settings are reported as set/unset only, because their
+    values can carry credentials. Unreadable sources are listed in errors.
+    """
+    proc, sysfs, etc = Path(proc_root), Path(sys_root), Path(etc_root)
+    facts = {"hostname": platform.node(), "interfaces": [], "ipv4": [], "ipv6": [],
+             "default_route": None, "dns": {"nameservers": [], "search": []},
+             "proxy_set": {name: bool(os.environ.get(name) or os.environ.get(name.lower()))
+                           for name in ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY")},
+             "errors": []}
+    try:
+        for entry in sorted((sysfs / "class" / "net").iterdir()):
+            try:
+                state = (entry / "operstate").read_text(encoding="ascii").strip()
+            except OSError:
+                state = "unknown"
+            facts["interfaces"].append({"name": entry.name, "state": state})
+    except OSError as error:
+        facts["errors"].append("interfaces:" + type(error).__name__)
+    try:
+        # fib_trie lists every address; "/32 host LOCAL" marks one of ours.
+        previous = None
+        for line in (proc / "net" / "fib_trie").read_text(encoding="ascii").splitlines():
+            match = re.search(r"\|-- (\d+\.\d+\.\d+\.\d+)$", line)
+            if match:
+                previous = match.group(1)
+            elif "/32 host LOCAL" in line and previous and previous not in facts["ipv4"]:
+                facts["ipv4"].append(previous)
+    except OSError as error:
+        facts["errors"].append("ipv4:" + type(error).__name__)
+    try:
+        for line in (proc / "net" / "if_inet6").read_text(encoding="ascii").splitlines():
+            fields = line.split()
+            if len(fields) == 6 and len(fields[0]) == 32:
+                address = ":".join(fields[0][i:i + 4] for i in range(0, 32, 4))
+                facts["ipv6"].append({"address": address, "interface": fields[5]})
+    except FileNotFoundError:
+        pass  # IPv6 disabled is an observation, not an error
+    except OSError as error:
+        facts["errors"].append("ipv6:" + type(error).__name__)
+    try:
+        for line in (proc / "net" / "route").read_text(encoding="ascii").splitlines()[1:]:
+            fields = line.split()
+            if len(fields) >= 3 and fields[1] == "00000000":
+                facts["default_route"] = {"interface": fields[0], "gateway": _hex_ipv4(fields[2])}
+                break
+    except (OSError, ValueError) as error:
+        facts["errors"].append("route:" + type(error).__name__)
+    try:
+        for line in (etc / "resolv.conf").read_text(encoding="utf-8", errors="replace").splitlines():
+            fields = line.split()
+            if len(fields) >= 2 and fields[0] == "nameserver":
+                facts["dns"]["nameservers"].append(fields[1])
+            elif fields and fields[0] in ("search", "domain"):
+                facts["dns"]["search"].extend(fields[1:])
+    except OSError as error:
+        facts["errors"].append("dns:" + type(error).__name__)
+    return facts
+
+
+def container_facts(*, proc_root="/proc", root="/"):
+    """Container / VM hints from marker files, cgroups and CPU flags only."""
+    proc, base = Path(proc_root), Path(root)
+    kinds = []
+    if (base / ".dockerenv").exists():
+        kinds.append("docker")
+    if (base / "run" / ".containerenv").exists():
+        kinds.append("podman")
+    try:
+        cgroup = (proc / "1" / "cgroup").read_text(encoding="utf-8", errors="replace")
+        for marker, kind in (("docker", "docker"), ("kubepods", "kubernetes"),
+                             ("containerd", "containerd"), ("lxc", "lxc")):
+            if marker in cgroup and kind not in kinds:
+                kinds.append(kind)
+    except OSError:
+        pass
+    declared = os.environ.get("container")  # systemd convention (podman, lxc, ...)
+    if declared and re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", declared) and declared not in kinds:
+        kinds.append(declared)
+    if os.environ.get("KUBERNETES_SERVICE_HOST") and "kubernetes" not in kinds:
+        kinds.append("kubernetes")
+    try:
+        virtualized = " hypervisor" in (proc / "cpuinfo").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        virtualized = None
+    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized}
+
+
+def _gib(value):
+    return "%.1f GiB" % (value / 2 ** 30)
+
+
+def to_text(facts):
+    """One "key: value" line per fact; tools as true/false. Easy to grep and paste."""
+    def clean(value):
+        text = str(value).lower() if isinstance(value, bool) else str(value)
+        return "".join("\\u%04x" % ord(c) if ord(c) < 32 or ord(c) == 127 else c for c in text)
+    lines = []
+    put = lambda key, value: lines.append(key + ": " + clean(value))
+    if facts.get("cwd"):
+        put("cwd", facts["cwd"])
+    put("os", " ".join(str(facts["os"][k]) for k in ("system", "release", "machine")))
+    if facts.get("os_release"):
+        put("os_release", " ".join(facts["os_release"].values()))
+    runtime = facts["runtime"]
+    put("python", "%s %s %sbit" % (runtime["implementation"], runtime["version"], runtime["bits"]))
+    if facts.get("host"):
+        put("host", facts["host"]["name"])
+    container = facts.get("container")
+    if container is not None:
+        put("in_container", container["in_container"])
+        if container["kinds"]:
+            put("container_kinds", ", ".join(container["kinds"]))
+        put("virtualized", container["virtualized"])
+    network = facts.get("network")
+    if network is not None:
+        put("hostname", network["hostname"])
+        put("ipv4", ", ".join(network["ipv4"]) or "(none)")
+        if network["ipv6"]:
+            put("ipv6", ", ".join(x["address"] + "%" + x["interface"] for x in network["ipv6"]))
+        put("interfaces", ", ".join(x["name"] + "(" + x["state"] + ")" for x in network["interfaces"]) or "(none)")
+        route = network["default_route"]
+        put("default_gateway", route["gateway"] + " via " + route["interface"] if route else "(none)")
+        put("dns", ", ".join(network["dns"]["nameservers"]) or "(none)")
+        if network["dns"]["search"]:
+            put("dns_search", ", ".join(network["dns"]["search"]))
+        for name, value in network["proxy_set"].items():
+            put("proxy." + name, value)
+        if network["errors"]:
+            put("network_errors", ", ".join(network["errors"]))
+    workspace = facts.get("workspace")
+    if workspace:
+        storage = workspace.get("storage")
+        if storage:
+            put("disk_free", _gib(storage["free_bytes"]) + " of " + _gib(storage["total_bytes"]))
+        put("markers", ", ".join(workspace.get("markers", [])) or "(none)")
+    for tool in facts.get("commands", []):
+        value = tool.get("available")
+        if tool.get("version"):
+            value = "true " + tool["version"]
+        put("tool." + tool["name"], value)
+    listeners = facts.get("listeners")
+    if listeners is not None:
+        put("listening_tcp_ports", ", ".join(map(str, listeners["tcp_ports"])) or "(none)")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv=None):
     """Direct single-file entry point; no-argument use observes current workspace."""
     import argparse
     parser = argparse.ArgumentParser(description="Read-only AI environment introduction")
     parser.add_argument("--directory", default=".")
-    parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument("--format", choices=("text", "markdown", "json"), default="text")
     parser.add_argument("--versions", action="store_true")
     parser.add_argument("--minimal", action="store_true",
                         help="OS/runtime only; omit workspace and tool observations")
+    parser.add_argument("--no-network", action="store_true",
+                        help="omit host name, addresses, routes, DNS and container hints")
     args = parser.parse_args(argv)
     try:
         facts = collect() if args.minimal else diagnose(
@@ -285,7 +452,13 @@ def main(argv=None):
     except (OSError, ValueError) as error:
         print(type(error).__name__, file=sys.stderr)
         return 2
-    print(to_json(facts) if args.format == "json" else to_markdown(facts), end="")
+    if not args.minimal:
+        facts["cwd"] = str(Path(args.directory).absolute())
+        if not args.no_network:
+            facts["container"] = container_facts()
+            facts["network"] = network_facts()
+    render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
+    print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
     partial |= any(row["status"] in ("timeout", "execution_error", "nonzero_exit",
                                     "unrecognized_version")

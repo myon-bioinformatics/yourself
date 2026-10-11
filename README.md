@@ -33,7 +33,37 @@ print(yourself.to_json(yourself.collect(include_host=True)))
 - Directory observation is opt-in, shallow, includes hidden names, never reads file contents and counts symlinks without following them. Symlink roots are rejected. Individual entry errors are reported; invalid/unreadable roots raise.
 - A sorted sample is deterministic for the same directory snapshot. Environment values can change. Filesystem races are not isolated.
 - Default output omits host name and directory. Opt-in names/paths can identify a machine or project; choose what to include before sharing.
-- No environment-variable dump, username/IP collection, recursive inventory, project inference, dependency inspection or Git identity. Repository metadata belongs to the canonical producer, not this module.
+- The no-argument CLI also reports host name, local IPv4/IPv6 addresses, interfaces, the default gateway, DNS servers, container/VM hints (Docker, Podman, Kubernetes, containerd, LXC, hypervisor flag) and whether proxy variables are set. All of it comes from local files (`/proc`, `/sys`, `/etc/resolv.conf`, marker files); no packets, DNS lookups or commands. Proxy values are never printed because they can carry credentials. `--no-network` omits this block.
+- No environment-variable dump, username collection, recursive inventory, project inference, dependency inspection or Git identity. Repository position (repository, SHA, branch, changes) is `python gh_identity.py local-position`; this file stays dependency-free.
+
+## One command (`python yourself.py`)
+
+With no options, `yourself.py` prints one `key: value` line per fact, ready to paste:
+
+```text
+cwd: /work/app
+os: Linux 6.8.0 x86_64
+os_release: ubuntu 24.04
+python: CPython 3.12.3 64bit
+in_container: true
+container_kinds: docker
+virtualized: false
+hostname: 3f2a9c1d
+ipv4: 172.17.0.5, 127.0.0.1
+interfaces: eth0(up), lo(unknown)
+default_gateway: 172.17.0.1 via eth0
+dns: 127.0.0.11
+proxy.HTTPS_PROXY: false
+disk_free: 41.2 GiB of 100.0 GiB
+markers: pyproject.toml, Dockerfile
+tool.docker: true
+tool.nvidia-smi: false
+...
+```
+
+Tools are `true` / `false` presence (versions only with `--versions`). Each key
+appears once. `--format json|markdown` gives the same facts in other shapes;
+`--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
 ## CLI
 
