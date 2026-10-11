@@ -15,10 +15,10 @@ import stat
 import sys
 from pathlib import Path
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
-           "network_facts", "container_facts", "probe", "probe_all", "hosts_facts",
+           "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
            "resource_facts", "session_facts", "main"]
 
 
@@ -312,6 +312,37 @@ def _hex_ipv4(value):
     return ".".join(str((raw >> shift) & 255) for shift in (0, 8, 16, 24))
 
 
+_LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
+
+
+def no_proxy_covers(value=None):
+    """Whether NO_PROXY exempts each loopback name (the value itself is never returned).
+
+    With HTTPS_PROXY set and localhost missing from NO_PROXY, a local dev
+    server is reached through the proxy and fails. Accepts "*", exact names,
+    leading-dot/wildcard forms of localhost and CIDR ranges such as 127.0.0.0/8.
+    """
+    import ipaddress
+    if value is None:
+        value = os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or ""
+    tokens = {t.strip().lower().strip("[]") for t in value.replace(" ", ",").split(",") if t.strip()}
+    covers = {}
+    for name in _LOOPBACK_NAMES:
+        hit = "*" in tokens or name in tokens
+        if not hit and name == "localhost":
+            hit = bool(tokens & {".localhost", "*.localhost"})
+        if not hit and name != "localhost":
+            for token in tokens:
+                try:
+                    hit = ipaddress.ip_address(name) in ipaddress.ip_network(token, strict=False)
+                except ValueError:
+                    continue
+                if hit:
+                    break
+        covers[name] = hit
+    return covers
+
+
 def network_facts(*, proc_root="/proc", sys_root="/sys", etc_root="/etc"):
     """Local network configuration from files only: no packets, DNS or commands.
 
@@ -324,7 +355,7 @@ def network_facts(*, proc_root="/proc", sys_root="/sys", etc_root="/etc"):
              "default_route": None, "dns": {"nameservers": [], "search": []},
              "proxy_set": {name: bool(os.environ.get(name) or os.environ.get(name.lower()))
                            for name in ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY")},
-             "errors": []}
+             "no_proxy_covers": no_proxy_covers(), "errors": []}
     try:
         for entry in sorted((sysfs / "class" / "net").iterdir()):
             try:
@@ -413,6 +444,8 @@ _PROBES = {
                       "{{range .IPAM.Config}}{{.Subnet}} gw={{.Gateway}} {{end}}"),
     "docker.containers": ("docker", "ps", "-a", "--format", "{{.Names}} {{.Image}} {{.State}} {{.Ports}}"),
     "docker.images": ("docker", "images", "--format", "{{.Repository}}:{{.Tag}} {{.Size}}"),
+    # The address the system resolver (nsswitch, not only /etc/hosts) gives first.
+    "localhost.resolves_to": ("getent", "hosts", "localhost"),
     "gpu": ("nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"),
 }
 
@@ -444,7 +477,7 @@ def probe_all(names=None, *, timeout=3):
     return {name: probe(_PROBES[name], timeout=timeout) for name in names}
 
 
-def hosts_facts(*, etc_root="/etc"):
+def hosts_facts(*, etc_root="/etc", proc_root="/proc"):
     """What /etc/hosts maps localhost-like names to (no DNS lookup).
 
     'localhost' can mean 127.0.0.1 or ::1; a server bound to only one of them
@@ -459,8 +492,22 @@ def hosts_facts(*, etc_root="/etc"):
                 if name in found and fields[0] not in found[name]:
                     found[name].append(fields[0])
     except OSError as error:
-        return {"measured": False, "error": type(error).__name__, "names": found}
-    return {"measured": True, "names": found}
+        return {"measured": False, "error": type(error).__name__, "names": found,
+                "ipv6_loopback": _ipv6_loopback(proc_root)}
+    return {"measured": True, "names": found, "ipv6_loopback": _ipv6_loopback(proc_root)}
+
+
+def _ipv6_loopback(proc_root):
+    """True when ::1 is configured on Linux (/proc/net/if_inet6); None off Linux.
+
+    A missing if_inet6 on Linux means IPv6 is disabled, so ::1 cannot answer.
+    """
+    if platform.system() != "Linux":
+        return None
+    text = _read(Path(proc_root) / "net" / "if_inet6")
+    if text is None:
+        return False
+    return any(line.split()[:1] == ["00000000000000000000000000000001"] for line in text.splitlines())
 
 
 def _read(path):
@@ -605,6 +652,8 @@ def to_text(facts):
             put("dns_search", ", ".join(network["dns"]["search"]))
         for name, value in network["proxy_set"].items():
             put("proxy." + name, value)
+        for name, value in (network.get("no_proxy_covers") or {}).items():
+            put("proxy.no_proxy_covers." + name, value)
         if network["errors"]:
             put("network_errors", ", ".join(network["errors"]))
     hosts = facts.get("hosts")
@@ -612,6 +661,8 @@ def to_text(facts):
         for name, addresses in hosts["names"].items():
             if addresses or name == "localhost":
                 put("hosts." + name, ", ".join(addresses) or "(not in /etc/hosts)")
+        if hosts.get("ipv6_loopback") is not None:
+            put("localhost.ipv6_loopback", hosts["ipv6_loopback"])
     for name, result in (facts.get("probes") or {}).items():
         if result["ok"]:
             value = "true"
