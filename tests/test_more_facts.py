@@ -85,3 +85,13 @@ def test_session_facts_flags_only_for_secrets(monkeypatch):
     facts = yourself.collect()
     facts["session"] = s
     assert "display: false (headless)\n" in yourself.to_text(facts)
+
+
+def test_unsupported_platform_keeps_the_bindings_shape(monkeypatch):
+    # macOS / Windows: same keys as Linux, measured=False, so the CLI output shape is stable.
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Darwin")
+    out = yourself.listener_ports(addresses=True)
+    assert out == {"measured": False, "tcp_ports": [], "errors": ["unsupported_platform"], "bindings": []}
+    facts = yourself.collect()
+    facts["listeners"] = out
+    assert "listening: unmeasured (unsupported_platform)\n" in yourself.to_text(facts)  # not "(none)"

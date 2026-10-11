@@ -247,7 +247,10 @@ def listener_ports(*, proc_root='/proc', addresses=False):
     is represented as an error; an empty observed table is distinct.
     """
     if platform.system() != 'Linux':
-        return {'measured': False, 'tcp_ports': [], 'errors': ['unsupported_platform']}
+        result = {'measured': False, 'tcp_ports': [], 'errors': ['unsupported_platform']}
+        if addresses:
+            result['bindings'] = []
+        return result
     ports, errors, observed, bindings = set(), [], 0, set()
     for name in ('tcp', 'tcp6'):
         try:
@@ -644,7 +647,9 @@ def to_text(facts):
         put("tool." + tool["name"], value)
     listeners = facts.get("listeners")
     if listeners is not None:
-        if "bindings" in listeners:
+        if not listeners.get("measured"):
+            put("listening", "unmeasured (" + ", ".join(listeners.get("errors") or ["unknown"]) + ")")
+        elif "bindings" in listeners:
             show = lambda b: ("[%s]" % b["address"] if ":" in b["address"] else b["address"]) + ":%d" % b["port"]
             put("listening", ", ".join(show(b) for b in listeners["bindings"]) or "(none)")
         else:
