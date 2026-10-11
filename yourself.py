@@ -18,7 +18,8 @@ from pathlib import Path
 __version__ = "0.4.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
-           "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "main"]
+           "network_facts", "container_facts", "probe", "probe_all", "hosts_facts",
+           "resource_facts", "session_facts", "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -222,16 +223,35 @@ def workspace_facts(path):
     return {'markers': markers, 'storage': storage, 'errors': errors}
 
 
-def listener_ports(*, proc_root='/proc'):
-    """Read Linux proc TCP LISTEN ports only, never connect or expose addresses.
+def _proc_address(text, family):
+    """Decode a /proc/net/tcp{,6} local address (host byte order per 32-bit word)."""
+    import ipaddress
+    raw = bytes.fromhex(text)
+    if family == 'tcp':
+        return str(ipaddress.IPv4Address(raw[::-1]))
+    words = b''.join(raw[i:i + 4][::-1] for i in range(0, 16, 4))
+    if words[:12] == b'\x00' * 10 + b'\xff\xff':
+        return '::ffff:' + str(ipaddress.IPv4Address(words[12:]))
+    return str(ipaddress.IPv6Address(words))
+
+
+def listener_ports(*, proc_root='/proc', addresses=False):
+    """Read Linux proc TCP LISTEN ports; never connect, scan or name processes.
+
+    With addresses=True also return each local bind address, so "listens on
+    127.0.0.1 only" versus "all interfaces" is visible (a frequent localhost /
+    container port-mapping problem). Bind addresses are local facts.
 
     Unsupported platforms return measured=False. No port scan, PID ownership,
     UDP inference, remote connections or network commands. Restricted proc data
     is represented as an error; an empty observed table is distinct.
     """
     if platform.system() != 'Linux':
-        return {'measured': False, 'tcp_ports': [], 'errors': ['unsupported_platform']}
-    ports, errors, observed = set(), [], 0
+        result = {'measured': False, 'tcp_ports': [], 'errors': ['unsupported_platform']}
+        if addresses:
+            result['bindings'] = []
+        return result
+    ports, errors, observed, bindings = set(), [], 0, set()
     for name in ('tcp', 'tcp6'):
         try:
             with (Path(proc_root) / 'net' / name).open('r', encoding='ascii') as stream:
@@ -247,13 +267,21 @@ def listener_ports(*, proc_root='/proc'):
                         continue
                     if 0 <= port <= 65535:
                         ports.add(port)
+                        if addresses:
+                            try:
+                                bindings.add((port, _proc_address(fields[1].rsplit(':', 1)[0], name)))
+                            except ValueError:
+                                errors.append('malformed_' + name)
                     else:
                         errors.append('malformed_' + name)
             observed += 1
         except (OSError, UnicodeError) as error:
             errors.append(name + ':' + type(error).__name__)
-    return {'measured': observed > 0, 'tcp_ports': sorted(ports),
-            'errors': sorted(set(errors))}
+    result = {'measured': observed > 0, 'tcp_ports': sorted(ports),
+              'errors': sorted(set(errors))}
+    if addresses:
+        result['bindings'] = [{'port': port, 'address': address} for port, address in sorted(bindings)]
+    return result
 
 
 def diagnose(*, directory=None, include_host=False, versions=False,
@@ -435,6 +463,94 @@ def hosts_facts(*, etc_root="/etc"):
     return {"measured": True, "names": found}
 
 
+def _read(path):
+    try:
+        return Path(path).read_text(encoding='utf-8', errors='replace').strip()
+    except OSError:
+        return None
+
+
+def resource_facts(*, proc_root="/proc", cgroup_root="/sys/fs/cgroup"):
+    """CPU, memory, load, uptime, container (cgroup v1/v2) limits, open-file limit."""
+    proc, cg = Path(proc_root), Path(cgroup_root)
+    facts = {"cpus": os.cpu_count(), "usable_cpus": None, "cpu_limit": None,
+             "memory_total_bytes": None, "memory_available_bytes": None, "swap_total_bytes": None,
+             "memory_limit_bytes": None, "load": None, "uptime_seconds": None, "open_files_limit": None}
+    if hasattr(os, "sched_getaffinity"):
+        try:
+            facts["usable_cpus"] = len(os.sched_getaffinity(0))
+        except OSError:
+            pass
+    for line in (_read(proc / "meminfo") or "").splitlines():
+        key, _, rest = line.partition(":")
+        value = rest.split()
+        if value and value[0].isdigit():
+            target = {"MemTotal": "memory_total_bytes", "MemAvailable": "memory_available_bytes",
+                      "SwapTotal": "swap_total_bytes"}.get(key)
+            if target:
+                facts[target] = int(value[0]) * 1024
+    loadavg = (_read(proc / "loadavg") or "").split()
+    if len(loadavg) >= 3:
+        facts["load"] = loadavg[:3]
+    uptime = (_read(proc / "uptime") or "").split()
+    if uptime:
+        try:
+            facts["uptime_seconds"] = int(float(uptime[0]))
+        except ValueError:
+            pass
+    # cgroup v2 then v1; "max" or a huge v1 sentinel means unlimited (None).
+    memory = _read(cg / "memory.max") or _read(cg / "memory" / "memory.limit_in_bytes")
+    if memory and memory.isdigit() and int(memory) < 2 ** 60:
+        facts["memory_limit_bytes"] = int(memory)
+    cpu = (_read(cg / "cpu.max") or "").split()
+    quota, period = (cpu + [None, None])[:2] if cpu else (_read(cg / "cpu" / "cpu.cfs_quota_us"),
+                                                         _read(cg / "cpu" / "cpu.cfs_period_us"))
+    if quota and period and quota.lstrip("-").isdigit() and period.isdigit() and int(quota) > 0 and int(period) > 0:
+        facts["cpu_limit"] = round(int(quota) / int(period), 2)
+    try:
+        import resource
+        soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        facts["open_files_limit"] = None if soft == resource.RLIM_INFINITY else soft
+    except (ImportError, OSError, ValueError):
+        pass
+    return facts
+
+
+def session_facts():
+    """Who/where/when this process runs: user, shell, locale, time zone,
+    display (headless?), Python executable and virtualenv, CA bundle and CI
+    variables (set/unset only)."""
+    import getpass
+    from datetime import datetime
+    try:
+        user = getpass.getuser()
+    except Exception:  # no passwd entry in some containers
+        user = None
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    zone = os.environ.get("TZ") or _read("/etc/timezone")
+    if not zone:
+        try:
+            zone = os.readlink("/etc/localtime").split("zoneinfo/", 1)[-1]
+        except OSError:
+            zone = None
+    flags = lambda names: {name: bool(os.environ.get(name)) for name in names}
+    return {"user": user, "uid": uid, "root": uid == 0 if uid is not None else None,
+            "home": str(Path.home()) if os.environ.get("HOME") else None,
+            "shell": Path(os.environ.get("SHELL", "")).name or None,
+            "lang": os.environ.get("LC_ALL") or os.environ.get("LANG"),
+            "timezone": zone, "local_time": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "display": flags(("DISPLAY", "WAYLAND_DISPLAY")),
+            "python_executable": sys.executable, "virtualenv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+            "ca_env": flags(("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE")),
+            "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK)}
+
+
+def _duration(seconds):
+    days, rest = divmod(int(seconds), 86400)
+    hours, rest = divmod(rest, 3600)
+    return ("%dd " % days if days else "") + "%dh%02dm" % (hours, rest // 60)
+
+
 def _gib(value):
     return "%.1f GiB" % (value / 2 ** 30)
 
@@ -448,6 +564,20 @@ def to_text(facts):
     put = lambda key, value: lines.append(key + ": " + clean(value))
     if facts.get("cwd"):
         put("cwd", facts["cwd"])
+    session = facts.get("session")
+    if session is not None:
+        put("user", "%s (uid %s, root=%s)" % (session["user"], session["uid"], str(session["root"]).lower()))
+        put("writable_cwd", session["writable_cwd"])
+        put("shell", session["shell"] or "(unset)")
+        put("lang", session["lang"] or "(unset)")
+        put("timezone", session["timezone"] or "(unknown)")
+        put("local_time", session["local_time"])
+        put("display", any(session["display"].values()) or "false (headless)")
+        put("python_executable", session["python_executable"])
+        put("virtualenv", session["virtualenv"])
+        for name, value in session["ca_env"].items():
+            put("ca_env." + name, value)
+        put("ci", " ".join("%s=%s" % (k, str(v).lower()) for k, v in session["ci"].items()))
     put("os", " ".join(str(facts["os"][k]) for k in ("system", "release", "machine")))
     if facts.get("os_release"):
         put("os_release", " ".join(facts["os_release"].values()))
@@ -491,6 +621,19 @@ def to_text(facts):
         else:
             value = "false (" + result.get("error", "failed") + ")"
         put(name, value)
+    res = facts.get("resources")
+    if res is not None:
+        put("cpus", "%s (usable %s, cgroup limit %s)" % (res["cpus"], res["usable_cpus"], res["cpu_limit"] or "none"))
+        if res["memory_total_bytes"]:
+            put("memory", "%s available of %s (cgroup limit %s, swap %s)" % (
+                _gib(res["memory_available_bytes"] or 0), _gib(res["memory_total_bytes"]),
+                _gib(res["memory_limit_bytes"]) if res["memory_limit_bytes"] else "none",
+                _gib(res["swap_total_bytes"] or 0)))
+        if res["load"]:
+            put("load", " ".join(res["load"]))
+        if res["uptime_seconds"] is not None:
+            put("uptime", _duration(res["uptime_seconds"]))
+        put("open_files_limit", res["open_files_limit"] or "unlimited")
     workspace = facts.get("workspace")
     if workspace:
         storage = workspace.get("storage")
@@ -504,7 +647,13 @@ def to_text(facts):
         put("tool." + tool["name"], value)
     listeners = facts.get("listeners")
     if listeners is not None:
-        put("listening_tcp_ports", ", ".join(map(str, listeners["tcp_ports"])) or "(none)")
+        if not listeners.get("measured"):
+            put("listening", "unmeasured (" + ", ".join(listeners.get("errors") or ["unknown"]) + ")")
+        elif "bindings" in listeners:
+            show = lambda b: ("[%s]" % b["address"] if ":" in b["address"] else b["address"]) + ":%d" % b["port"]
+            put("listening", ", ".join(show(b) for b in listeners["bindings"]) or "(none)")
+        else:
+            put("listening_tcp_ports", ", ".join(map(str, listeners["tcp_ports"])) or "(none)")
     return "\n".join(lines) + "\n"
 
 
@@ -530,6 +679,10 @@ def main(argv=None):
         return 2
     if not args.minimal:
         facts["cwd"] = str(Path(args.directory).absolute())
+        facts["session"] = session_facts()
+        facts["resources"] = resource_facts()
+        if not args.no_network:
+            facts["listeners"] = listener_ports(addresses=True)
         if not args.no_network:
             facts["container"] = container_facts()
             facts["network"] = network_facts()

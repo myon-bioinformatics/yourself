@@ -14,7 +14,8 @@ def test_default_readonly(monkeypatch, tmp_path, capsys):
     assert yourself.main(["--format", "json", "--no-probes"]) == 0  # probes are the only executions
     report = json.loads(capsys.readouterr().out)
     assert report["host"] is None
-    assert report["listeners"] is None
+    # The CLI now lists local listeners (proc read, not an execution).
+    assert report["listeners"] is None or "bindings" in report["listeners"]
     assert report["workspace"]["markers"] == ["pyproject.toml"]
     assert {row["name"] for row in report["commands"]} >= {"gh", "uv", "playwright", "actionlint"}
     assert "never-read" not in json.dumps(report)
