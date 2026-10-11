@@ -18,7 +18,7 @@ from pathlib import Path
 __version__ = "0.4.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
-           "network_facts", "container_facts", "main"]
+           "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -375,6 +375,66 @@ def container_facts(*, proc_root="/proc", root="/"):
     return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized}
 
 
+# Fixed probes run by default (shell=False, bounded time and output). Their
+# point is "does this work here?", so a failure is a result, not an error.
+_PROBES = {
+    "docker.context": ("docker", "context", "show"),
+    "docker.server": ("docker", "version", "--format", "{{.Server.Version}}"),
+    "docker.networks": ("docker", "network", "ls", "--format", "{{.Name}} {{.Driver}} {{.Scope}}"),
+    "docker.bridge": ("docker", "network", "inspect", "bridge", "--format",
+                      "{{range .IPAM.Config}}{{.Subnet}} gw={{.Gateway}} {{end}}"),
+    "docker.containers": ("docker", "ps", "-a", "--format", "{{.Names}} {{.Image}} {{.State}} {{.Ports}}"),
+    "docker.images": ("docker", "images", "--format", "{{.Repository}}:{{.Tag}} {{.Size}}"),
+    "gpu": ("nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"),
+}
+
+
+def probe(argv, *, timeout=3, max_lines=20):
+    """Run one fixed argv; ok is True only for exit 0. Output is bounded."""
+    if not shutil.which(argv[0]):
+        return {"ok": False, "lines": [], "error": "not_installed"}
+    try:
+        done = subprocess.run(list(argv), shell=False, stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "lines": [], "error": "timeout"}
+    except OSError as error:
+        return {"ok": False, "lines": [], "error": type(error).__name__}
+    text = done.stdout[:65536].decode("utf-8", "replace")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    result = {"ok": done.returncode == 0, "lines": lines[:max_lines], "truncated": len(lines) > max_lines}
+    if done.returncode:
+        first = next((l.strip() for l in done.stderr[:4096].decode("utf-8", "replace").splitlines() if l.strip()), "")
+        result["error"] = first[:200] or "exit %d" % done.returncode
+    return result
+
+
+def probe_all(names=None, *, timeout=3):
+    names = tuple(_PROBES) if names is None else tuple(names)
+    if any(n not in _PROBES for n in names):
+        raise ValueError("unsupported probe name")
+    return {name: probe(_PROBES[name], timeout=timeout) for name in names}
+
+
+def hosts_facts(*, etc_root="/etc"):
+    """What /etc/hosts maps localhost-like names to (no DNS lookup).
+
+    'localhost' can mean 127.0.0.1 or ::1; a server bound to only one of them
+    is unreachable through the other, so both mappings are shown.
+    """
+    wanted = ("localhost", "host.docker.internal", "gateway.docker.internal")
+    found = {name: [] for name in wanted}
+    try:
+        for line in (Path(etc_root) / "hosts").read_text(encoding="utf-8", errors="replace").splitlines():
+            fields = line.split("#", 1)[0].split()
+            for name in fields[1:]:
+                if name in found and fields[0] not in found[name]:
+                    found[name].append(fields[0])
+    except OSError as error:
+        return {"measured": False, "error": type(error).__name__, "names": found}
+    return {"measured": True, "names": found}
+
+
 def _gib(value):
     return "%.1f GiB" % (value / 2 ** 30)
 
@@ -417,6 +477,20 @@ def to_text(facts):
             put("proxy." + name, value)
         if network["errors"]:
             put("network_errors", ", ".join(network["errors"]))
+    hosts = facts.get("hosts")
+    if hosts is not None:
+        for name, addresses in hosts["names"].items():
+            if addresses or name == "localhost":
+                put("hosts." + name, ", ".join(addresses) or "(not in /etc/hosts)")
+    for name, result in (facts.get("probes") or {}).items():
+        if result["ok"]:
+            value = "true"
+            if result["lines"]:
+                value += " " + ("; ".join(result["lines"]) if len(result["lines"]) <= 10
+                                else "; ".join(result["lines"][:10]) + "; ... (%d)" % len(result["lines"]))
+        else:
+            value = "false (" + result.get("error", "failed") + ")"
+        put(name, value)
     workspace = facts.get("workspace")
     if workspace:
         storage = workspace.get("storage")
@@ -445,6 +519,8 @@ def main(argv=None):
                         help="OS/runtime only; omit workspace and tool observations")
     parser.add_argument("--no-network", action="store_true",
                         help="omit host name, addresses, routes, DNS and container hints")
+    parser.add_argument("--no-probes", action="store_true",
+                        help="do not run the docker / nvidia-smi probes")
     args = parser.parse_args(argv)
     try:
         facts = collect() if args.minimal else diagnose(
@@ -457,6 +533,9 @@ def main(argv=None):
         if not args.no_network:
             facts["container"] = container_facts()
             facts["network"] = network_facts()
+            facts["hosts"] = hosts_facts()
+        if not args.no_probes:
+            facts["probes"] = probe_all()
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])

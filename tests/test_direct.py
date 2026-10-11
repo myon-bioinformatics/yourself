@@ -11,7 +11,7 @@ def test_default_readonly(monkeypatch, tmp_path, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(yourself.subprocess, "run", lambda *a, **k: pytest.fail("executed tool"))
     (tmp_path / "pyproject.toml").write_text("SECRET_TOKEN = 'never-read'")
-    assert yourself.main(["--format", "json"]) == 0
+    assert yourself.main(["--format", "json", "--no-probes"]) == 0  # probes are the only executions
     report = json.loads(capsys.readouterr().out)
     assert report["host"] is None
     assert report["listeners"] is None
