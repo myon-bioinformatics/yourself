@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -219,8 +220,21 @@ def test_dpkg_count_and_list_file(tmp_path, monkeypatch):
                                      sys_root=str(tmp_path), dpkg_list_path="packages.txt")
     assert fp["dpkg"]["ok"] is True
     assert fp["dpkg"]["value"]["count"] == 2
+    text = payload.decode("utf-8")
+    assert fp["dpkg"]["value"]["sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
     assert fp["dpkg"]["value"]["list_path"]["value"] == "packages.txt"
-    assert (tmp_path / "packages.txt").read_text(encoding="utf-8") == payload.decode("utf-8")
+    assert (tmp_path / "packages.txt").read_text(encoding="utf-8") == text
+
+
+def test_dpkg_sha256_known_input(monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(yourself.shutil, "which", lambda name: "/dpkg-query")
+    payload = b"alpha\t1.0\nbeta\t2.0\n"
+    monkeypatch.setattr(yourself.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=0, stdout=payload, stderr=b""))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x")
+    digest = hashlib.sha256(payload.decode("utf-8").encode("utf-8")).hexdigest()
+    assert fp["dpkg"]["value"]["sha256"] == digest
 
 
 def test_dpkg_oserror(monkeypatch):
@@ -432,7 +446,7 @@ def test_windows_imagedata_path(monkeypatch, tmp_path):
     assert fp["imagedata"]["value"]["object"]["image"] == "windows-2022"
 
 
-def test_cloud_guess_aws_gcp(tmp_path):
+def test_cloud_guess_aws_from_dmi(tmp_path):
     dmi = tmp_path / "class" / "dmi" / "id"
     dmi.mkdir(parents=True)
     (dmi / "sys_vendor").write_text("Amazon EC2", encoding="utf-8")
@@ -440,9 +454,18 @@ def test_cloud_guess_aws_gcp(tmp_path):
     (dmi / "chassis_asset_tag").write_text("", encoding="utf-8")
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["cloud"]["guess"] == "aws"
+    assert any("amazon" in item.lower() or "ec2" in item.lower() for item in fp["cloud"]["evidence"])
+
+
+def test_cloud_guess_gcp_from_dmi(tmp_path):
+    dmi = tmp_path / "class" / "dmi" / "id"
+    dmi.mkdir(parents=True)
     (dmi / "sys_vendor").write_text("Google", encoding="utf-8")
+    (dmi / "product_name").write_text("Google Compute Engine", encoding="utf-8")
+    (dmi / "chassis_asset_tag").write_text("", encoding="utf-8")
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["cloud"]["guess"] == "gcp"
+    assert any("google" in item.lower() for item in fp["cloud"]["evidence"])
 
 
 def test_agent_toolsdirectory_fallback(tmp_path):
@@ -606,6 +629,26 @@ def test_imds_redirect_request_returns_none():
     redirect = next(handler for handler in opener.handlers if type(handler).__name__ == "NoRedirect")
     request = urllib.request.Request("http://169.254.169.254/")
     assert redirect.redirect_request(request, None, 302, "Found", {}, "http://redirect/") is None
+
+
+def test_imds_read_bytes_constant():
+    assert yourself._IMDS_READ_BYTES == 65536
+
+
+def test_imds_sends_metadata_header(monkeypatch):
+    captured = {}
+
+    class Opener:
+        def open(self, request, timeout=1):
+            captured["request"] = request
+            return _fake_imds_opener({"compute": {"osType": "Linux"}}).open(request, timeout)
+
+    monkeypatch.setattr(yourself, "_build_imds_opener", lambda: Opener())
+    yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    request = captured["request"]
+    assert request.full_url.startswith("http://169.254.169.254/metadata/instance")
+    assert request.has_header("Metadata")
+    assert request.get_header("Metadata") == "true"
 
 
 def test_imds_read_capped_at_64k(monkeypatch):
