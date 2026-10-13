@@ -128,6 +128,9 @@ jobs:
         run: python -m py_compile yourself.py scripts/yourself_cli.py vendor/xprobe_pytest.py
       - name: Verify standalone runtime
         run: python -S -c "import yourself"
+      - name: Runner fingerprint mutation check
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: python scripts/runner_fingerprint_mutations.py
       - name: Runner environment fingerprint (real runner)
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
         run: |

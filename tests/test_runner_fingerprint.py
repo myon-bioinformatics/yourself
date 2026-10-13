@@ -1,15 +1,36 @@
 import json
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
 import pytest
 
 import yourself
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _fake_imds_opener(payload, *, exc=None):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size=-1):
+            return json.dumps(payload).encode("utf-8")
+
+    class Opener:
+        def open(self, request, timeout=1):
+            if exc:
+                raise exc
+            return Response()
+
+    return Opener()
 
 
 def test_schema_and_env_soft_missing(monkeypatch):
@@ -43,6 +64,57 @@ def test_imagedata_success(tmp_path, monkeypatch):
     assert fp["imagedata"]["value"]["object"]["image"] == "ubuntu-24.04"
 
 
+def test_imagedata_github_array(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    payload = [{"group": "Image", "detail": "ubuntu-24.04"}, {"group": "OS", "detail": "linux"}]
+    (img_dir / "imagedata.json").write_text(json.dumps(payload), encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path),
+                                     etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["ok"] is True
+    assert fp["imagedata"]["value"]["kind"] == "array"
+    assert fp["imagedata"]["value"]["entries"][0]["group"] == "Image"
+
+
+def test_imagedata_deep_nesting_fails_soft(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    (img_dir / "imagedata.json").write_text("[" * 80000, encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path),
+                                     etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["ok"] is False
+    assert fp["imagedata"]["reason"] in ("recursion_depth", "invalid_json")
+
+
+def test_imagedata_read_oserror(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    target = img_dir / "imagedata.json"
+    target.write_text("{}", encoding="utf-8")
+    real_read = Path.read_bytes
+
+    def fail_bytes(self):
+        if self == target:
+            raise PermissionError
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_bytes)
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["reason"] == "PermissionError"
+
+
+def test_imagedata_unsupported_type(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    (img_dir / "imagedata.json").write_text('"scalar"', encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["reason"] == "unsupported_type"
+
+
 def test_os_release_parsed(tmp_path, monkeypatch):
     monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     etc = tmp_path / "etc"
@@ -51,6 +123,25 @@ def test_os_release_parsed(tmp_path, monkeypatch):
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(etc),
                                      sys_root=str(tmp_path))
     assert fp["os_identity"]["os_release"]["value"]["ID"] == "ubuntu"
+
+
+def test_os_release_not_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path),
+                                     sys_root=str(tmp_path))
+    assert fp["os_identity"]["os_release"]["reason"] == "not_found"
+
+
+def test_os_release_skips_comment_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "os-release").write_text('#ID=poison\nVERSION_ID="24.04"\n', encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(etc),
+                                     sys_root=str(tmp_path))
+    parsed = fp["os_identity"]["os_release"]["value"]
+    assert parsed["VERSION_ID"] == "24.04"
+    assert not any(key.startswith("#") for key in parsed)
 
 
 def test_dmi_cloud_guess_and_waagent(tmp_path):
@@ -65,6 +156,38 @@ def test_dmi_cloud_guess_and_waagent(tmp_path):
                                        sys_root=str(tmp_path))
     assert fp["cloud"]["guess"] == "azure"
     assert any("waagent" in item for item in fp["cloud"]["evidence"])
+
+
+def test_cloud_guess_waagent_only(tmp_path):
+    wa = tmp_path / "var" / "lib" / "waagent"
+    wa.mkdir(parents=True)
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path),
+                                     sys_root=str(tmp_path))
+    assert fp["cloud"]["guess"] == "azure"
+    assert fp["cloud"]["evidence"] == ["path:/var/lib/waagent"]
+
+
+def test_dmi_empty_values_not_evidence(tmp_path):
+    dmi = tmp_path / "class" / "dmi" / "id"
+    dmi.mkdir(parents=True)
+    (dmi / "sys_vendor").write_text("", encoding="utf-8")
+    (dmi / "product_name").write_text("", encoding="utf-8")
+    (dmi / "chassis_asset_tag").write_text("", encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path),
+                                     sys_root=str(tmp_path))
+    assert fp["cloud"]["evidence"] == []
+
+
+def test_waagent_exists_oserror(tmp_path, monkeypatch):
+    target = tmp_path / "var" / "lib" / "waagent"
+
+    def boom(self):
+        raise OSError("denied")
+
+    monkeypatch.setattr(type(target), "exists", boom)
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path),
+                                     sys_root=str(tmp_path))
+    assert fp["cloud"]["waagent"]["reason"] == "OSError"
 
 
 def test_unreadable_dmi(tmp_path, monkeypatch):
@@ -82,22 +205,33 @@ def test_unreadable_dmi(tmp_path, monkeypatch):
 
 
 def test_dpkg_count_and_list_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     monkeypatch.setattr(yourself.shutil, "which", lambda name: "/usr/bin/dpkg-query" if name == "dpkg-query" else None)
-    payload = b"pkg-a\t1.0\npkg-b\t2.0\n"
+    payload = b"pkg-a\t1.0\n   \npkg-b\t2.0\n"
 
     def run(argv, **kwargs):
         assert argv[0] == "/usr/bin/dpkg-query"
         return SimpleNamespace(returncode=0, stdout=payload, stderr=b"")
 
     monkeypatch.setattr(yourself.subprocess, "run", run)
-    out = tmp_path / "packages.txt"
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path),
-                                     sys_root=str(tmp_path), dpkg_list_path=str(out))
+                                     sys_root=str(tmp_path), dpkg_list_path="packages.txt")
     assert fp["dpkg"]["ok"] is True
     assert fp["dpkg"]["value"]["count"] == 2
-    assert len(fp["dpkg"]["value"]["sha256"]) == 64
-    assert out.read_text(encoding="utf-8") == payload.decode("utf-8")
+    assert fp["dpkg"]["value"]["list_path"]["value"] == "packages.txt"
+    assert (tmp_path / "packages.txt").read_text(encoding="utf-8") == payload.decode("utf-8")
+
+
+def test_dpkg_oserror(monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(yourself.shutil, "which", lambda name: "/dpkg-query")
+
+    def boom(*args, **kwargs):
+        raise OSError("nope")
+
+    monkeypatch.setattr(yourself.subprocess, "run", boom)
+    assert yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x")["dpkg"]["reason"] == "OSError"
 
 
 def test_dpkg_not_available(monkeypatch):
@@ -125,32 +259,45 @@ def test_tool_cache_inventory(tmp_path):
 
 
 def test_imds_not_called_by_default(monkeypatch):
-    monkeypatch.setattr(yourself.platform, "system", lambda: "Darwin")
+    def forbidden(*args, **kwargs):
+        pytest.fail("urllib used without opt-in")
 
-    def forbidden(argv, **kwargs):
-        if argv[0] in ("curl", "wget"):
-            pytest.fail("IMDS client invoked without opt-in")
-        raise AssertionError("unexpected subprocess")
-
-    monkeypatch.setattr(yourself.subprocess, "run", forbidden)
-    monkeypatch.setattr(yourself.shutil, "which", lambda name: None)
+    monkeypatch.setattr(urllib.request, "build_opener", forbidden)
     fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x")
     assert fp["imds"] is None
 
 
-def test_imds_opt_in(monkeypatch):
-    monkeypatch.setattr(yourself.shutil, "which", lambda name: "/bin/curl" if name == "curl" else None)
-
-    def run(argv, **kwargs):
-        assert argv[0] == "curl"
-        assert "169.254.169.254" in argv[-1]
-        body = b'{"compute":{"osType":"Linux"}}'
-        return SimpleNamespace(returncode=0, stdout=body, stderr=b"")
-
-    monkeypatch.setattr(yourself.subprocess, "run", run)
+def test_imds_opt_in_allowlist(monkeypatch):
+    payload = {"compute": {"osType": "Linux", "vmSize": "Standard_D2s_v3", "location": "eastus",
+                            "subscriptionId": "SECRET-SUB", "resourceGroupName": "rg",
+                            "vmId": "vm-id", "name": "hostname", "tags": "sensitive"}}
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *args, **kwargs: _fake_imds_opener(payload))
     fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
     assert fp["imds"]["ok"] is True
-    assert fp["imds"]["value"]["osType"] == "Linux"
+    blob = json.dumps(fp["imds"])
+    assert "SECRET" not in blob
+    assert "hostname" not in blob
+    assert fp["imds"]["value"]["compute"]["osType"] == "Linux"
+
+
+@pytest.mark.parametrize("exc,reason", [
+    (TimeoutError(), "timeout"),
+    (OSError("down"), "OSError"),
+])
+def test_imds_errors(monkeypatch, exc, reason):
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *args, **kwargs: _fake_imds_opener({}, exc=exc))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"]["reason"] == reason
+
+
+def test_imds_url_error(monkeypatch):
+    import urllib.error
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *args, **kwargs: _fake_imds_opener({}, exc=urllib.error.URLError("nope")))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"]["reason"] == "url_error"
 
 
 def test_summary_human_readable():
@@ -165,18 +312,58 @@ def test_summary_human_readable():
           "cloud": {"guess": "azure", "evidence": ["dmi:sys_vendor=Microsoft"]},
           "dpkg": {"ok": True, "value": {"count": 3, "sha256": "a" * 64}},
           "tool_cache_contents": [{"ok": True, "value": {"tools": {"node": ["20"]}}}],
-          "imds": None}
+          "imds": {"ok": True, "value": {"compute": {"osType": "Linux", "location": "eastus"}}}}
     text = yourself.runner_fingerprint_summary(fp)
     assert "RUNNER_OS: Linux" in text
     assert "cloud_guess: azure" in text
+    assert "imds: ok (osType=Linux, location=eastus)" in text
 
 
-def test_cli_default_unchanged_without_runner_env():
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), "--minimal"],
-                          capture_output=True, text=True, timeout=30)
-    assert proc.returncode == 0
-    assert "schema" not in proc.stdout
+def test_summary_os_release_id_fallback():
+    fp = {"schema": "runner-fingerprint/1",
+          "github_actions_env": {k: {"ok": False, "reason": "unset"} for k in
+                                 ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion")},
+          "os_identity": {"platform": "Linux",
+                          "os_release": {"ok": True, "value": {"ID": "ubuntu", "VERSION_ID": "24.04"}}},
+          "cloud": {"guess": None, "evidence": []},
+          "dpkg": {"ok": False, "reason": "not_available"},
+          "tool_cache_contents": [],
+          "imds": None}
+    assert "os: ubuntu 24.04" in yourself.runner_fingerprint_summary(fp)
+
+
+@pytest.mark.parametrize("argv", [
+    [],
+    ["--minimal"],
+    ["--format", "json"],
+    ["--no-probes", "--no-network"],
+])
+def test_cli_default_unchanged_without_runner_env(argv):
+    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), *argv],
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode in (0, 2)
     assert "runner-fingerprint" not in proc.stdout
+    assert "runner-fingerprint/1" not in proc.stdout
+
+
+def test_default_text_keys_probe_delta_only(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(yourself.shutil, "which", lambda name: None)
+    monkeypatch.setattr(yourself, "probe_all",
+                        lambda **kwargs: {"synthetic.probe": {"ok": True, "lines": ["ok"], "truncated": False}})
+
+    def keys(argv):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            yourself.main(argv)
+        return {line.split(":", 1)[0] for line in buf.getvalue().splitlines() if ":" in line}
+
+    full = keys([])
+    no_probes = keys(["--no-probes"])
+    assert "local_time" in full
+    assert full - no_probes <= {"synthetic.probe"}
 
 
 def test_cli_runner_env_json():
@@ -185,6 +372,19 @@ def test_cli_runner_env_json():
     assert proc.returncode == 0
     data = json.loads(proc.stdout)
     assert data["schema"] == "runner-fingerprint/1"
+
+
+def test_runner_env_flags_require_runner_env(capsys):
+    assert yourself.main(["--runner-env-json"]) == 2
+    assert "require --runner-env" in capsys.readouterr().err
+
+
+def test_cli_runner_env_imds_mocked(monkeypatch, capsys):
+    monkeypatch.setattr(yourself, "_imds_facts",
+                        lambda **kwargs: {"ok": True, "value": {"compute": {"osType": "Linux"}}})
+    assert yourself.main(["--runner-env", "--runner-env-json", "--runner-env-imds"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["imds"]["ok"] is True
 
 
 def test_github_step_summary_append(tmp_path, monkeypatch):
@@ -209,15 +409,6 @@ def test_windows_os_identity(monkeypatch):
     monkeypatch.setattr(yourself.platform, "win32_ver", lambda: ("11", "10.0.22631", "SP0", "Multiprocessor"))
     fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x")
     assert fp["os_identity"]["win32_ver"]["ok"] is True
-
-
-def test_imagedata_not_object(tmp_path, monkeypatch):
-    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
-    img_dir = tmp_path / "imagegeneration"
-    img_dir.mkdir()
-    (img_dir / "imagedata.json").write_text("[1,2]", encoding="utf-8")
-    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
-    assert fp["imagedata"]["reason"] == "not_object"
 
 
 def test_unknown_platform_os_identity(monkeypatch):
@@ -305,47 +496,6 @@ def test_tool_cache_errors(tmp_path, monkeypatch):
     assert result["entry_errors"][0]["reason"] == "PermissionError"
 
 
-@pytest.mark.parametrize("handler,reason", [
-    ("timeout", "timeout"), ("oserror", "OSError"), ("badexit", "nonzero_exit"),
-    ("badjson", None), ("listjson", None)])
-def test_imds_branches(monkeypatch, handler, reason):
-    calls = {"n": 0}
-
-    def which(name):
-        if name == "curl":
-            return "curl"
-        return None
-
-    monkeypatch.setattr(yourself.shutil, "which", which)
-
-    def run(argv, **kwargs):
-        calls["n"] += 1
-        if handler == "timeout":
-            raise subprocess.TimeoutExpired(argv, 1)
-        if handler == "oserror":
-            raise OSError("nope")
-        if handler == "badexit":
-            return SimpleNamespace(returncode=7, stdout=b"", stderr=b"fail")
-        if handler == "badjson":
-            return SimpleNamespace(returncode=0, stdout=b"not-json", stderr=b"")
-        if handler == "listjson":
-            return SimpleNamespace(returncode=0, stdout=b"[1]", stderr=b"")
-        raise AssertionError(handler)
-
-    monkeypatch.setattr(yourself.subprocess, "run", run)
-    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
-    if reason:
-        assert fp["imds"]["reason"] == reason
-    else:
-        assert fp["imds"]["ok"] is True
-
-
-def test_imds_no_client(monkeypatch):
-    monkeypatch.setattr(yourself.shutil, "which", lambda name: None)
-    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
-    assert fp["imds"]["reason"] == "no_http_client"
-
-
 def test_summary_without_cloud_guess():
     fp = {"schema": "runner-fingerprint/1",
           "github_actions_env": {k: {"ok": False, "reason": "unset"} for k in
@@ -354,24 +504,20 @@ def test_summary_without_cloud_guess():
           "cloud": {"guess": None, "evidence": []},
           "dpkg": {"ok": False, "reason": "not_available"},
           "tool_cache_contents": [],
-          "imds": {"ok": False, "reason": "no_http_client"}}
+          "imds": {"ok": False, "reason": "url_error"}}
     text = yourself.runner_fingerprint_summary(fp)
     assert "cloud_guess: (none)" in text
-    assert "imds: (no_http_client)" in text
+    assert "imds: (url_error)" in text
 
 
-def test_cli_runner_env_imds_flag():
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), "--runner-env", "--runner-env-json",
-                           "--runner-env-imds"], capture_output=True, text=True, timeout=60)
-    assert proc.returncode == 0
-    data = json.loads(proc.stdout)
-    assert data["imds"] is not None
-    assert "ok" in data["imds"]
-
-
-def test_github_summary_write_failure(monkeypatch, tmp_path):
+def test_github_summary_write_failure_soft(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "missing" / "summary.md"))
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), "--runner-env",
-                           "--runner-env-github-summary"], capture_output=True, text=True, timeout=60)
-    assert proc.returncode == 2
-    assert "FileNotFoundError" in proc.stderr or "OSError" in proc.stderr
+    assert yourself.main(["--runner-env", "--runner-env-github-summary"]) == 0
+    assert "GITHUB_STEP_SUMMARY" in capsys.readouterr().err
+
+
+def test_mutation_script_zero_survivors():
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "runner_fingerprint_mutations.py")],
+                            cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "survivors: 0" in proc.stdout

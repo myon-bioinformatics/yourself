@@ -635,6 +635,9 @@ def _env_soft(name, environ=None):
     return _soft_ok(environ[name])
 
 
+_IMAGEDATA_MAX_BYTES = 2 * 1024 * 1024
+
+
 def _imagedata_paths(root="/"):
     base = Path(root)
     if platform.system() == "Windows":
@@ -642,21 +645,43 @@ def _imagedata_paths(root="/"):
     return [base / "imagegeneration" / "imagedata.json"]
 
 
+def _json_load_soft(text):
+    try:
+        return _soft_ok(json.loads(text))
+    except RecursionError:
+        return _soft_err("recursion_depth")
+    except json.JSONDecodeError as error:
+        return _soft_err("invalid_json", detail=str(error))
+
+
+def _normalize_imagedata_value(data, path):
+    if isinstance(data, dict):
+        return _soft_ok({"path": str(path), "kind": "object", "keys": sorted(data.keys()), "object": data})
+    if isinstance(data, list):
+        entries = []
+        for item in data:
+            if isinstance(item, dict):
+                entries.append({key: item[key] for key in ("group", "detail") if key in item})
+            else:
+                entries.append({"value_type": type(item).__name__})
+        return _soft_ok({"path": str(path), "kind": "array", "length": len(data), "entries": entries})
+    return _soft_err("unsupported_type", path=str(path))
+
+
 def _parse_imagedata(paths):
     for path in paths:
         try:
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
+            raw = Path(path).read_bytes()
         except FileNotFoundError:
             continue
         except OSError as error:
             return _soft_err(type(error).__name__, path=str(path))
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as error:
-            return _soft_err("invalid_json", path=str(path), detail=str(error))
-        if not isinstance(data, dict):
-            return _soft_err("not_object", path=str(path))
-        return _soft_ok({"path": str(path), "keys": sorted(data.keys()), "object": data})
+        if len(raw) > _IMAGEDATA_MAX_BYTES:
+            return _soft_err("too_large", path=str(path), bytes=len(raw))
+        loaded = _json_load_soft(raw.decode("utf-8", errors="replace"))
+        if not loaded["ok"]:
+            return {**loaded, "path": str(path)}
+        return _normalize_imagedata_value(loaded["value"], path)
     return _soft_err("not_found", paths=[str(p) for p in paths])
 
 
@@ -742,7 +767,7 @@ def _dpkg_inventory(*, list_path=None, timeout=30):
     if list_path is not None:
         try:
             Path(list_path).write_text(text, encoding="utf-8")
-            written = str(Path(list_path).absolute())
+            written = str(list_path)
         except OSError as error:
             return {"ok": True, "value": {"count": len(lines), "sha256": digest,
                                           "list_path": _soft_err(type(error).__name__)}}
@@ -780,35 +805,40 @@ def _tool_cache_inventory(path):
     return result
 
 
+_IMDS_COMPUTE_ALLOW = ("osType", "location", "vmSize", "sku", "offer", "version")
+
+
+def _sanitize_imds_payload(data):
+    if not isinstance(data, dict):
+        return {"type": type(data).__name__}
+    compute = data.get("compute")
+    if not isinstance(compute, dict):
+        return {}
+    return {"compute": {key: compute[key] for key in _IMDS_COMPUTE_ALLOW if key in compute}}
+
+
 def _imds_facts(*, timeout=1.0):
-    """Optional cloud metadata; only when caller opts in. Uses curl/wget, not socket imports."""
+    """Optional cloud metadata; only when caller opts in (stdlib urllib, no proxy)."""
+    import urllib.error
+    import urllib.request
     url = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
-    headers = "Metadata:true"
-    for argv in (["curl", "-sS", "-m", str(max(1, int(timeout))), "-H", headers, url],
-                 ["wget", "-qO-", "--timeout=" + str(max(1, int(timeout))),
-                  "--header=" + headers, url]):
-        if not shutil.which(argv[0]):
-            continue
-        try:
-            done = subprocess.run(argv, shell=False, stdin=subprocess.DEVNULL,
-                                  capture_output=True, timeout=timeout + 0.5, check=False)
-        except subprocess.TimeoutExpired:
-            return _soft_err("timeout", via=argv[0])
-        except OSError as error:
-            return _soft_err(type(error).__name__, via=argv[0])
-        if done.returncode:
-            detail = (done.stderr or done.stdout)[:300].decode("utf-8", "replace").strip()
-            return _soft_err("nonzero_exit", via=argv[0], detail=detail or ("exit %d" % done.returncode))
-        text = done.stdout.decode("utf-8", errors="replace")
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            return _soft_ok({"via": argv[0], "raw_bytes": len(done.stdout)})
-        if isinstance(data, dict):
-            return _soft_ok({"via": argv[0], "keys": sorted(data.keys()), "compute": data.get("compute"),
-                             "osType": (data.get("compute") or {}).get("osType")})
-        return _soft_ok({"via": argv[0], "type": type(data).__name__})
-    return _soft_err("no_http_client")
+    request = urllib.request.Request(url, headers={"Metadata": "true"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(65536)
+    except urllib.error.URLError as error:
+        reason = error.reason
+        name = type(reason).__name__ if reason is not None else "URLError"
+        return _soft_err("url_error", detail=name)
+    except TimeoutError:
+        return _soft_err("timeout")
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+    loaded = _json_load_soft(raw.decode("utf-8", errors="replace"))
+    if not loaded["ok"]:
+        return loaded
+    return _soft_ok(_sanitize_imds_payload(loaded["value"]))
 
 
 def runner_fingerprint(*, environ=None, root="/", etc_root="/etc", sys_root="/sys",
@@ -871,7 +901,9 @@ def runner_fingerprint_summary(fingerprint):
     imds = fingerprint.get("imds")
     if imds is not None:
         if imds.get("ok"):
-            lines.append("imds: ok via %s" % (imds["value"].get("via") or "?"))
+            compute = (imds.get("value") or {}).get("compute") or {}
+            bits = ["%s=%s" % (key, compute[key]) for key in _IMDS_COMPUTE_ALLOW if key in compute]
+            lines.append("imds: ok" + (" (" + ", ".join(bits) + ")" if bits else ""))
         else:
             lines.append("imds: (%s)" % imds.get("reason", "failed"))
     return "\n".join(lines) + "\n"
@@ -1007,6 +1039,11 @@ def main(argv=None):
     parser.add_argument("--runner-env-github-summary", action="store_true",
                         help="with --runner-env, append summary to GITHUB_STEP_SUMMARY when set")
     args = parser.parse_args(argv)
+    runner_flags = (args.runner_env_json or args.runner_env_imds or args.runner_env_dpkg_list
+                    or args.runner_env_github_summary)
+    if runner_flags and not args.runner_env:
+        print("runner-env flags require --runner-env", file=sys.stderr)
+        return 2
     if args.runner_env:
         fingerprint = runner_fingerprint(dpkg_list_path=args.runner_env_dpkg_list,
                                          imds=args.runner_env_imds)
@@ -1022,8 +1059,7 @@ def main(argv=None):
                         stream.write("\n## Runner fingerprint\n\n")
                         stream.write(runner_fingerprint_summary(fingerprint))
                 except OSError as error:
-                    print(type(error).__name__, file=sys.stderr)
-                    return 2
+                    print("GITHUB_STEP_SUMMARY: " + type(error).__name__, file=sys.stderr)
         return 0
     try:
         facts = collect() if args.minimal else diagnose(
