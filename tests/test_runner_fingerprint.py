@@ -118,14 +118,14 @@ def test_imagedata_read_oserror(tmp_path, monkeypatch):
     img_dir.mkdir()
     target = img_dir / "imagedata.json"
     target.write_text("{}", encoding="utf-8")
-    real_read = Path.read_bytes
+    real_read = Path.open
 
-    def fail_bytes(self):
+    def fail_bytes(self, *args, **kwargs):
         if self == target:
             raise PermissionError
-        return real_read(self)
+        return real_read(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_bytes", fail_bytes)
+    monkeypatch.setattr(Path, "open", fail_bytes)
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["imagedata"]["reason"] == "PermissionError"
 
@@ -477,7 +477,7 @@ def test_cloud_guess_aws_from_dmi(tmp_path):
     (dmi / "chassis_asset_tag").write_text("", encoding="utf-8")
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["cloud"]["guess"] == "aws"
-    assert any("amazon" in item.lower() or "ec2" in item.lower() for item in fp["cloud"]["evidence"])
+    assert "dmi:sys_vendor:aws" in fp["cloud"]["evidence"]
 
 
 def test_cloud_guess_gcp_from_dmi(tmp_path):
@@ -488,7 +488,7 @@ def test_cloud_guess_gcp_from_dmi(tmp_path):
     (dmi / "chassis_asset_tag").write_text("", encoding="utf-8")
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["cloud"]["guess"] == "gcp"
-    assert any("google" in item.lower() for item in fp["cloud"]["evidence"])
+    assert "dmi:sys_vendor:gcp" in fp["cloud"]["evidence"]
 
 
 def test_agent_toolsdirectory_fallback(tmp_path):
@@ -787,3 +787,41 @@ def test_mutation_script_zero_survivors():
                             cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "survivors: 0" in proc.stdout
+
+def test_dmi_identifiers_never_exposed(tmp_path):
+    dmi = tmp_path / "class/dmi/id"
+    dmi.mkdir(parents=True)
+    for name in yourself._DMI_FILES:
+        (dmi / name).write_text("Microsoft secret-device-123")
+    cloud = yourself._dmi_facts(sys_root=tmp_path, root=tmp_path)
+    assert cloud["guess"] == "azure"
+    assert cloud["evidence"] == ["dmi:" + name + ":azure" for name in yourself._DMI_FILES]
+    assert "secret-device-123" not in json.dumps(cloud)
+    assert "Microsoft" not in json.dumps(cloud)
+
+
+def test_imagedata_object_allowlist(tmp_path):
+    path = tmp_path / "imagedata.json"
+    path.write_text(json.dumps({"image": "ubuntu", "ImageOS": "ubuntu24",
+                              "ImageVersion": "20261013", "vmId": "secret",
+                              "secret-key": "secret", "hostname": "secret"}))
+    result = yourself._parse_imagedata([path])
+    assert result["value"]["object"] == {"image": "ubuntu", "ImageOS": "ubuntu24",
+                                         "ImageVersion": "20261013"}
+    assert result["value"]["keys"] == ["ImageOS", "ImageVersion", "image"]
+    assert "secret" not in json.dumps(result)
+    path.write_text('{"image": {"vmId": "secret"}}')
+    assert yourself._parse_imagedata([path])["value"]["object"] == {}
+
+
+def test_imagedata_read_is_bounded(tmp_path, monkeypatch):
+    import io
+    calls = []
+    class Stream(io.BytesIO):
+        def read(self, size=-1):
+            calls.append(size)
+            assert size == yourself._IMAGEDATA_MAX_BYTES + 1
+            return super().read(size)
+    monkeypatch.setattr(Path, "open", lambda *a, **k: Stream(b"x" * (yourself._IMAGEDATA_MAX_BYTES + 100)))
+    assert yourself._parse_imagedata([tmp_path / "image"])["reason"] == "too_large"
+    assert calls == [yourself._IMAGEDATA_MAX_BYTES + 1]

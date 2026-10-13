@@ -11,6 +11,13 @@ TESTS = ROOT / "tests" / "test_runner_fingerprint.py"
 
 # Each mutation is (name, old, new, pytest node ids that must fail if mutation survives)
 MUTATIONS = [
+    ("imagedata_unbounded_read", "raw = stream.read(_IMAGEDATA_MAX_BYTES + 1)",
+     "raw = stream.read()", ["test_imagedata_read_is_bounded"]),
+    ("imagedata_object_leak", '"object": safe}', '"object": data}',
+     ["test_imagedata_object_allowlist"]),
+    ("dmi_raw_leak", '"dmi": safe_fields', '"dmi": fields',
+     ["test_dmi_identifiers_never_exposed"]),
+
     ("imds_default_on", 'if imds:\n        fingerprint["imds"]', 'fingerprint["imds"]',
      ["test_imds_not_called_by_default"]),
     ("imagedata_oserror_skip",
@@ -53,7 +60,7 @@ MUTATIONS = [
      'parsed.get("PRETTY_NAME") or "?"',
      ["test_summary_os_release_id_fallback"]),
     ("dmi_empty_evidence", 'if item.get("ok") and item.get("value"):',
-     'if item.get("ok"):',
+     'if item.get("ok"):\n            evidence.append("dmi:" + name)',
      ["test_dmi_empty_values_not_evidence"]),
     ("waagent_exists_oserror",
      '    except OSError as error:\n        waagent_present = None',

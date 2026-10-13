@@ -656,7 +656,9 @@ def _json_load_soft(text):
 
 def _normalize_imagedata_value(data, path):
     if isinstance(data, dict):
-        return _soft_ok({"path": str(path), "kind": "object", "keys": sorted(data.keys()), "object": data})
+        safe = {key: data[key] for key in ("image", "ImageOS", "ImageVersion")
+                if key in data and isinstance(data[key], str)}
+        return _soft_ok({"path": str(path), "kind": "object", "keys": sorted(safe), "object": safe})
     if isinstance(data, list):
         entries = []
         for item in data:
@@ -671,7 +673,8 @@ def _normalize_imagedata_value(data, path):
 def _parse_imagedata(paths):
     for path in paths:
         try:
-            raw = Path(path).read_bytes()
+            with Path(path).open("rb") as stream:
+                raw = stream.read(_IMAGEDATA_MAX_BYTES + 1)
         except FileNotFoundError:
             continue
         except OSError as error:
@@ -722,18 +725,25 @@ def _dmi_facts(*, sys_root="/sys", root="/"):
     evidence = []
     for name, item in fields.items():
         if item.get("ok") and item.get("value"):
-            evidence.append("dmi:" + name + "=" + item["value"])
+            value = item["value"].lower()
+            matches = [provider for provider, tokens in (
+                ("azure", ("microsoft", "azure")), ("aws", ("amazon", "ec2")),
+                ("gcp", ("google",))) if any(token in value for token in tokens)]
+            evidence.extend("dmi:" + name + ":" + provider for provider in matches)
     if waagent_present:
         evidence.append("path:/var/lib/waagent")
     guess = None
-    blob = " ".join(evidence).lower()
+    blob = " ".join(item.get("value", "") for item in fields.values() if item.get("ok")).lower()
     if "microsoft" in blob or "azure" in blob or waagent_present:
         guess = "azure"
     elif "amazon" in blob or "ec2" in blob:
         guess = "aws"
     elif "google" in blob:
         guess = "gcp"
-    return {"dmi": fields, "waagent": _soft_ok(waagent_present) if waagent_err is None
+    safe_fields = {name: (_soft_ok([provider for provider in ("azure", "aws", "gcp")
+                                  if "dmi:" + name + ":" + provider in evidence])
+                          if item.get("ok") else item) for name, item in fields.items()}
+    return {"dmi": safe_fields, "waagent": _soft_ok(waagent_present) if waagent_err is None
             else _soft_err(waagent_err), "guess": guess, "evidence": evidence}
 
 
