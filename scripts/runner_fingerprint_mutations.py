@@ -94,6 +94,18 @@ MUTATIONS = [
      '            if not tool_dir.is_dir():\n                continue',
      '            if not tool_dir.is_dir():\n                tools[name] = []\n                continue',
      ["test_tool_cache_skips_plain_files"]),
+    ("github_summary_force_open",
+     'if summary_path:',
+     'if True:',
+     ["test_github_summary_unset_env"]),
+    ("imds_unlimited_read",
+     'raw = response.read(_IMDS_READ_BYTES)',
+     'raw = response.read()',
+     ["test_imds_read_capped_at_64k"]),
+    ("imds_redirect_enabled",
+     '        def redirect_request(self, req, fp, code, msg, headers, newurl):\n            return None',
+     '        def redirect_request(self, req, fp, code, msg, headers, newurl):\n            return urllib.request.Request(newurl)',
+     ["test_imds_redirect_request_returns_none"]),
 ]
 
 

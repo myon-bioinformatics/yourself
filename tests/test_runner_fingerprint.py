@@ -601,6 +601,51 @@ def test_imds_top_level_non_dict(monkeypatch):
     assert fp["imds"]["value"] == {"type": "list"}
 
 
+def test_imds_redirect_request_returns_none():
+    opener = yourself._build_imds_opener()
+    redirect = next(handler for handler in opener.handlers if type(handler).__name__ == "NoRedirect")
+    request = urllib.request.Request("http://169.254.169.254/")
+    assert redirect.redirect_request(request, None, 302, "Found", {}, "http://redirect/") is None
+
+
+def test_imds_read_capped_at_64k(monkeypatch):
+    seen = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size=-1):
+            seen["size"] = size
+            return b"{}"
+
+    class Opener:
+        def open(self, request, timeout=1):
+            return Response()
+
+    monkeypatch.setattr(yourself, "_build_imds_opener", lambda: Opener())
+    yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert seen["size"] == yourself._IMDS_READ_BYTES
+
+
+def test_github_summary_unset_env(monkeypatch, capsys):
+    import builtins
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    real_open = builtins.open
+
+    def guard(path, *args, **kwargs):
+        if path is None:
+            pytest.fail("open(None) must not be called")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", guard)
+    assert yourself.main(["--runner-env", "--runner-env-github-summary"]) == 0
+    assert capsys.readouterr().out.startswith("Runner fingerprint")
+
+
 def test_imds_opener_disables_proxy_and_redirects(monkeypatch):
     recorded = []
 

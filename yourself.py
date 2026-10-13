@@ -800,6 +800,7 @@ def _tool_cache_inventory(path):
 
 
 _IMDS_COMPUTE_ALLOW = ("osType", "location", "vmSize", "sku", "offer", "version")
+_IMDS_READ_BYTES = 65536
 
 
 def _sanitize_imds_payload(data):
@@ -831,7 +832,7 @@ def _imds_facts(*, timeout=1.0):
     opener = _build_imds_opener()
     try:
         with opener.open(request, timeout=timeout) as response:
-            raw = response.read(65536)
+            raw = response.read(_IMDS_READ_BYTES)
     except urllib.error.HTTPError as error:
         return _soft_err("http_error", status=error.code)
     except urllib.error.URLError as error:
