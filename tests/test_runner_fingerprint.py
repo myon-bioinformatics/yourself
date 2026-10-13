@@ -20,7 +20,8 @@ def test_schema_and_env_soft_missing(monkeypatch):
     assert fp["imds"] is None
 
 
-def test_imagedata_garbage_and_missing(tmp_path):
+def test_imagedata_garbage_and_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     img_dir = tmp_path / "imagegeneration"
     img_dir.mkdir()
     bad = img_dir / "imagedata.json"
@@ -31,7 +32,8 @@ def test_imagedata_garbage_and_missing(tmp_path):
     assert fp["imagedata"]["reason"] == "invalid_json"
 
 
-def test_imagedata_success(tmp_path):
+def test_imagedata_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     img_dir = tmp_path / "imagegeneration"
     img_dir.mkdir()
     (img_dir / "imagedata.json").write_text('{"image":"ubuntu-24.04"}', encoding="utf-8")
@@ -41,7 +43,8 @@ def test_imagedata_success(tmp_path):
     assert fp["imagedata"]["value"]["object"]["image"] == "ubuntu-24.04"
 
 
-def test_os_release_parsed(tmp_path):
+def test_os_release_parsed(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     etc = tmp_path / "etc"
     etc.mkdir()
     (etc / "os-release").write_text('ID=ubuntu\nVERSION_ID="24.04"\n', encoding="utf-8")
@@ -208,12 +211,32 @@ def test_windows_os_identity(monkeypatch):
     assert fp["os_identity"]["win32_ver"]["ok"] is True
 
 
-def test_imagedata_not_object(tmp_path):
+def test_imagedata_not_object(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     img_dir = tmp_path / "imagegeneration"
     img_dir.mkdir()
     (img_dir / "imagedata.json").write_text("[1,2]", encoding="utf-8")
     fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
     assert fp["imagedata"]["reason"] == "not_object"
+
+
+def test_unknown_platform_os_identity(monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "FreeBSD")
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x")
+    assert fp["os_identity"]["detail"]["reason"] == "unsupported_platform"
+
+
+def test_windows_imagedata_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Windows")
+    target = tmp_path / "imagedata.json"
+    target.write_text('{"image":"windows-2022"}', encoding="utf-8")
+
+    def paths(root="/"):
+        return [target]
+
+    monkeypatch.setattr(yourself, "_imagedata_paths", paths)
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["value"]["object"]["image"] == "windows-2022"
 
 
 def test_cloud_guess_aws_gcp(tmp_path):
