@@ -698,15 +698,9 @@ def _os_identity(*, etc_root="/etc"):
             release["value"] = parsed
         return {"platform": system, "os_release": release}
     if system == "Darwin":
-        try:
-            return {"platform": system, "mac_ver": _soft_ok(platform.mac_ver())}
-        except ValueError as error:
-            return {"platform": system, "mac_ver": _soft_err(type(error).__name__)}
+        return {"platform": system, "mac_ver": _soft_ok(platform.mac_ver())}
     if system == "Windows":
-        try:
-            return {"platform": system, "win32_ver": _soft_ok(platform.win32_ver())}
-        except AttributeError as error:
-            return {"platform": system, "win32_ver": _soft_err(type(error).__name__)}
+        return {"platform": system, "win32_ver": _soft_ok(platform.win32_ver())}
     return {"platform": system, "detail": _soft_err("unsupported_platform")}
 
 
@@ -817,16 +811,29 @@ def _sanitize_imds_payload(data):
     return {"compute": {key: compute[key] for key in _IMDS_COMPUTE_ALLOW if key in compute}}
 
 
+def _build_imds_opener():
+    """IMDS fetcher: no HTTP proxy, no redirects."""
+    import urllib.request
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
 def _imds_facts(*, timeout=1.0):
     """Optional cloud metadata; only when caller opts in (stdlib urllib, no proxy)."""
     import urllib.error
     import urllib.request
     url = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
     request = urllib.request.Request(url, headers={"Metadata": "true"})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = _build_imds_opener()
     try:
         with opener.open(request, timeout=timeout) as response:
             raw = response.read(65536)
+    except urllib.error.HTTPError as error:
+        return _soft_err("http_error", status=error.code)
     except urllib.error.URLError as error:
         reason = error.reason
         name = type(reason).__name__ if reason is not None else "URLError"

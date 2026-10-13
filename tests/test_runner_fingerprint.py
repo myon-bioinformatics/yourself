@@ -4,7 +4,7 @@ import sys
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+import urllib.error
 
 import pytest
 
@@ -387,14 +387,16 @@ def test_cli_runner_env_imds_mocked(monkeypatch, capsys):
     assert data["imds"]["ok"] is True
 
 
-def test_github_step_summary_append(tmp_path, monkeypatch):
+def test_github_step_summary_success_contents(tmp_path, monkeypatch, capsys):
     summary = tmp_path / "summary.md"
+    summary.write_text("prior\n", encoding="utf-8")
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), "--runner-env",
-                           "--runner-env-github-summary"],
-                          capture_output=True, text=True, timeout=60)
-    assert proc.returncode == 0
-    assert "Runner fingerprint" in summary.read_text(encoding="utf-8")
+    assert yourself.main(["--runner-env", "--runner-env-github-summary"]) == 0
+    body = summary.read_text(encoding="utf-8")
+    assert body.startswith("prior\n")
+    assert "## Runner fingerprint" in body
+    assert "RUNNER_OS:" in body
+    assert capsys.readouterr().out.startswith("Runner fingerprint")
 
 
 def test_mac_os_identity(monkeypatch):
@@ -514,6 +516,154 @@ def test_github_summary_write_failure_soft(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "missing" / "summary.md"))
     assert yourself.main(["--runner-env", "--runner-env-github-summary"]) == 0
     assert "GITHUB_STEP_SUMMARY" in capsys.readouterr().err
+
+
+def test_imagedata_too_large(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    target = img_dir / "imagedata.json"
+    target.write_bytes(b"x" * (yourself._IMAGEDATA_MAX_BYTES + 1))
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["reason"] == "too_large"
+
+
+def test_imagedata_array_non_dict_element(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    (img_dir / "imagedata.json").write_text("[42, {\"group\": \"G\"}]", encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    assert fp["imagedata"]["value"]["entries"][0]["value_type"] == "int"
+
+
+def test_tool_cache_skips_plain_files(tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "readme.txt").write_text("x", encoding="utf-8")
+    (cache / "node" / "20").mkdir(parents=True)
+    result = yourself._tool_cache_inventory(str(cache))
+    assert list(result["value"]["tools"]) == ["node"]
+
+
+def test_tool_cache_root_is_dir_oserror(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    real_is_dir = Path.is_dir
+
+    def flaky(self):
+        if self == cache:
+            raise OSError("denied")
+        return real_is_dir(self)
+
+    monkeypatch.setattr(Path, "is_dir", flaky)
+    assert yourself._tool_cache_inventory(str(cache))["reason"] == "OSError"
+
+
+def test_tool_cache_iterdir_oserror(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    real_iter = Path.iterdir
+
+    def flaky(self):
+        if self == cache:
+            raise PermissionError
+        return real_iter(self)
+
+    monkeypatch.setattr(Path, "iterdir", flaky)
+    assert yourself._tool_cache_inventory(str(cache))["reason"] == "PermissionError"
+
+
+def test_imds_http_error_status(monkeypatch):
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *a, **k: _fake_imds_opener({}, exc=urllib.error.HTTPError(
+                            "http://x", 401, "Unauthorized", {}, None)))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"] == {"ok": False, "reason": "http_error", "status": 401}
+
+
+def test_sanitize_imds_non_dict_compute():
+    assert yourself._sanitize_imds_payload({"compute": "bad", "subscriptionId": "secret"}) == {}
+
+
+def test_imds_compute_string_no_leak(monkeypatch):
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *a, **k: _fake_imds_opener({"compute": "bad", "subscriptionId": "secret"}))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"]["ok"] is True
+    assert "secret" not in json.dumps(fp["imds"])
+    assert fp["imds"]["value"] == {}
+
+
+def test_imds_top_level_non_dict(monkeypatch):
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _fake_imds_opener([1, 2]))
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"]["value"] == {"type": "list"}
+
+
+def test_imds_opener_disables_proxy_and_redirects(monkeypatch):
+    recorded = []
+
+    def spy(*handlers):
+        recorded.extend(handlers)
+
+        class Opener:
+            def open(self, request, timeout=1):
+                return _fake_imds_opener({"compute": {"osType": "Linux"}}).open(request, timeout)
+
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", spy)
+    yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert any(isinstance(handler, urllib.request.ProxyHandler) for handler in recorded)
+    proxy = next(handler for handler in recorded if isinstance(handler, urllib.request.ProxyHandler))
+    assert proxy.proxies == {}
+    assert any(type(handler).__name__ == "NoRedirect" for handler in recorded)
+
+
+def test_imds_invalid_json_from_wire(monkeypatch):
+    class BadJsonOpener:
+        def open(self, request, timeout=1):
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def read(self, size=-1):
+                    return b"{not-json"
+
+            return Response()
+
+    monkeypatch.setattr(yourself, "_build_imds_opener", lambda: BadJsonOpener())
+    fp = yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
+    assert fp["imds"]["reason"] == "invalid_json"
+
+
+def test_summary_skips_os_line_on_darwin():
+    fp = {"schema": "runner-fingerprint/1",
+          "github_actions_env": {k: {"ok": False, "reason": "unset"} for k in
+                                 ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion")},
+          "os_identity": {"platform": "Darwin", "mac_ver": {"ok": True, "value": ("14", (), "")}},
+          "cloud": {"guess": None, "evidence": []},
+          "dpkg": {"ok": False, "reason": "unsupported_platform"},
+          "tool_cache_contents": [],
+          "imds": None}
+    text = yourself.runner_fingerprint_summary(fp)
+    assert not any(line.startswith("os:") for line in text.splitlines())
+
+
+def test_summary_omits_dpkg_when_not_ok_without_reason():
+    fp = {"schema": "runner-fingerprint/1",
+          "github_actions_env": {k: {"ok": False, "reason": "unset"} for k in
+                                 ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion")},
+          "os_identity": {"platform": "Linux", "os_release": {"ok": False, "reason": "not_found"}},
+          "cloud": {"guess": None, "evidence": []},
+          "dpkg": {"ok": False},
+          "tool_cache_contents": [],
+          "imds": None}
+    assert "dpkg_packages" not in yourself.runner_fingerprint_summary(fp)
 
 
 def test_mutation_script_zero_survivors():
