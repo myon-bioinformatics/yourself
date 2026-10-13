@@ -114,6 +114,20 @@ Probes use `docker … --format '{{…}}'`, `getent hosts localhost` and `nvidia
 with `shell=False`, 3 s each, at most 20 lines. `--no-probes` skips them. `--format json|markdown` gives the same facts in other shapes;
 `--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
+### CI runner fingerprint (opt-in)
+
+When a job misbehaves because of the **hosted image** (for example GitHub-hosted Ubuntu on Azure), the default report does not say which image or package set ran. `--runner-env` collects an offline `runner-fingerprint/1` snapshot for CI forensics:
+
+```sh
+python yourself.py --runner-env
+python yourself.py --runner-env --runner-env-json
+python yourself.py --runner-env --runner-env-dpkg-list /tmp/dpkg.txt   # Linux only
+python yourself.py --runner-env --runner-env-imds                     # explicit metadata HTTP
+python yourself.py --runner-env --runner-env-github-summary           # append to GITHUB_STEP_SUMMARY
+```
+
+It records GitHub Actions env vars (`RUNNER_OS`, `ImageOS`, `ImageVersion`, tool-cache paths), optional `imagedata.json`, OS identity (`/etc/os-release` or platform-specific), kernel/Python, a cloud guess from DMI + `/var/lib/waagent`, a `dpkg-query` package count and SHA-256 (full list only when `--runner-env-dpkg-list` is set), and tool-cache directory versions. Every probe fails soft; missing data is recorded with a reason. Instance metadata is **not** fetched unless `--runner-env-imds` is set (short timeout via `curl`/`wget`; no `socket`/`urllib` import). Default `python yourself.py` output is unchanged without `--runner-env`. CI on `ubuntu-latest` / Python 3.12 uploads `runner-fingerprint.json` as an artifact.
+
 ## CLI
 
 ```sh
