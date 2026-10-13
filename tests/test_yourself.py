@@ -116,7 +116,7 @@ class IntegrationTests(unittest.TestCase):
                 modules.append(node.module.split(".")[0])
         for name in modules:
             self.assertIn(name, sys.stdlib_module_names)
-        self.assertFalse(set(modules) & {"socket", "urllib", "http"})
+        self.assertFalse(set(modules) & {"socket", "http"})
 
     def test_cli_from_other_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

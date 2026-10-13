@@ -114,6 +114,24 @@ Probes use `docker … --format '{{…}}'`, `getent hosts localhost` and `nvidia
 with `shell=False`, 3 s each, at most 20 lines. `--no-probes` skips them. `--format json|markdown` gives the same facts in other shapes;
 `--no-network` drops the network/container block; `--minimal` keeps OS/Python only.
 
+### CI runner fingerprint (opt-in)
+
+When a job misbehaves because of the **hosted image** (for example GitHub-hosted Ubuntu on Azure), the default report does not say which image or package set ran. `--runner-env` collects an offline `runner-fingerprint/1` snapshot for CI forensics:
+
+```sh
+python yourself.py --runner-env
+python yourself.py --runner-env --runner-env-json
+python yourself.py --runner-env --runner-env-dpkg-list /tmp/dpkg.txt   # Linux only
+python yourself.py --runner-env --runner-env-imds                     # explicit metadata HTTP
+python yourself.py --runner-env --runner-env-github-summary           # append to GITHUB_STEP_SUMMARY
+```
+
+It records GitHub Actions env vars (`RUNNER_OS`, `ImageOS`, `ImageVersion`, tool-cache paths), optional `imagedata.json` (object or GitHub’s array form), OS identity (`/etc/os-release` or platform-specific), kernel/Python, a cloud guess from DMI + `/var/lib/waagent`, a `dpkg-query` package count and SHA-256 (full list only when `--runner-env-dpkg-list` is set), and tool-cache directory versions. DMI values are used only internally; output contains fixed provider labels, never raw identifiers. Object-form imagedata exposes only string-valued image, ImageOS, and ImageVersion fields. Reads stop at 2 MiB plus one overflow byte. Every probe fails soft; missing data is recorded with a reason. Instance metadata is **not** fetched unless `--runner-env-imds` is set; then `urllib.request` is used with an empty proxy map, ~1 s timeout, and only allowlisted compute fields (`osType`, `location`, `vmSize`, `sku`, `offer`, `version`)—never subscription, resource group, VM id, name, or tags. Default `python yourself.py` output is unchanged without `--runner-env`. CI on `ubuntu-latest` / Python 3.12 uploads `runner-fingerprint.json` as an artifact.
+
+```sh
+python scripts/runner_fingerprint_mutations.py
+```
+
 ## CLI
 
 ```sh

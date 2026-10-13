@@ -5,6 +5,7 @@ Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
 
+import hashlib
 import json
 import os
 import platform
@@ -15,11 +16,12 @@ import stat
 import sys
 from pathlib import Path
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
            "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
-           "resource_facts", "session_facts", "main"]
+           "resource_facts", "session_facts", "runner_fingerprint", "runner_fingerprint_summary",
+           "main"]
 
 
 def directory_summary(path, *, sample_size=10):
@@ -602,6 +604,329 @@ def _gib(value):
     return "%.1f GiB" % (value / 2 ** 30)
 
 
+_RUNNER_ENV_KEYS = ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion",
+                    "RUNNER_TOOL_CACHE", "AGENT_TOOLSDIRECTORY")
+_DMI_FILES = ("sys_vendor", "product_name", "chassis_asset_tag")
+
+
+def _soft_ok(value):
+    return {"ok": True, "value": value}
+
+
+def _soft_err(reason, **extra):
+    item = {"ok": False, "reason": reason}
+    item.update(extra)
+    return item
+
+
+def _read_soft(path):
+    try:
+        return _soft_ok(Path(path).read_text(encoding="utf-8", errors="replace").strip())
+    except FileNotFoundError:
+        return _soft_err("not_found")
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+
+
+def _env_soft(name, environ=None):
+    environ = environ if environ is not None else os.environ
+    if name not in environ:
+        return _soft_err("unset")
+    return _soft_ok(environ[name])
+
+
+_IMAGEDATA_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _imagedata_paths(root="/"):
+    base = Path(root)
+    if platform.system() == "Windows":
+        return [Path("C:/imagedata.json")]
+    return [base / "imagegeneration" / "imagedata.json"]
+
+
+def _json_load_soft(text):
+    try:
+        return _soft_ok(json.loads(text))
+    except RecursionError:
+        return _soft_err("recursion_depth")
+    except json.JSONDecodeError as error:
+        return _soft_err("invalid_json", detail=str(error))
+
+
+def _normalize_imagedata_value(data, path):
+    if isinstance(data, dict):
+        safe = {key: data[key] for key in ("image", "ImageOS", "ImageVersion")
+                if key in data and isinstance(data[key], str)}
+        return _soft_ok({"path": str(path), "kind": "object", "keys": sorted(safe), "object": safe})
+    if isinstance(data, list):
+        entries = []
+        for item in data:
+            if isinstance(item, dict):
+                entries.append({key: item[key] for key in ("group", "detail") if key in item})
+            else:
+                entries.append({"value_type": type(item).__name__})
+        return _soft_ok({"path": str(path), "kind": "array", "length": len(data), "entries": entries})
+    return _soft_err("unsupported_type", path=str(path))
+
+
+def _parse_imagedata(paths):
+    for path in paths:
+        try:
+            with Path(path).open("rb") as stream:
+                raw = stream.read(_IMAGEDATA_MAX_BYTES + 1)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            return _soft_err(type(error).__name__, path=str(path))
+        if len(raw) > _IMAGEDATA_MAX_BYTES:
+            return _soft_err("too_large", path=str(path), bytes=len(raw))
+        loaded = _json_load_soft(raw.decode("utf-8", errors="replace"))
+        if not loaded["ok"]:
+            return {**loaded, "path": str(path)}
+        return _normalize_imagedata_value(loaded["value"], path)
+    return _soft_err("not_found", paths=[str(p) for p in paths])
+
+
+def _os_identity(*, etc_root="/etc"):
+    system = platform.system()
+    if system == "Linux":
+        release = _read_soft(Path(etc_root) / "os-release")
+        if release["ok"]:
+            parsed = {}
+            for line in release["value"].splitlines():
+                if "=" in line and not line.startswith("#"):
+                    key, _, raw = line.partition("=")
+                    parsed[key] = raw.strip().strip('"')
+            release["value"] = parsed
+        return {"platform": system, "os_release": release}
+    if system == "Darwin":
+        return {"platform": system, "mac_ver": _soft_ok(platform.mac_ver())}
+    if system == "Windows":
+        return {"platform": system, "win32_ver": _soft_ok(platform.win32_ver())}
+    return {"platform": system, "detail": _soft_err("unsupported_platform")}
+
+
+def _kernel_facts():
+    return {"release": platform.release(), "version": platform.version()}
+
+
+def _dmi_facts(*, sys_root="/sys", root="/"):
+    base = Path(sys_root) / "class" / "dmi" / "id"
+    fields = {name: _read_soft(base / name) for name in _DMI_FILES}
+    waagent = Path(root) / "var/lib/waagent"
+    try:
+        waagent_present = waagent.exists()
+    except OSError as error:
+        waagent_present = None
+        waagent_err = type(error).__name__
+    else:
+        waagent_err = None
+    evidence = []
+    for name, item in fields.items():
+        if item.get("ok") and item.get("value"):
+            value = item["value"].lower()
+            matches = [provider for provider, tokens in (
+                ("azure", ("microsoft", "azure")), ("aws", ("amazon", "ec2")),
+                ("gcp", ("google",))) if any(token in value for token in tokens)]
+            evidence.extend("dmi:" + name + ":" + provider for provider in matches)
+    if waagent_present:
+        evidence.append("path:/var/lib/waagent")
+    guess = None
+    blob = " ".join(item.get("value", "") for item in fields.values() if item.get("ok")).lower()
+    if "microsoft" in blob or "azure" in blob or waagent_present:
+        guess = "azure"
+    elif "amazon" in blob or "ec2" in blob:
+        guess = "aws"
+    elif "google" in blob:
+        guess = "gcp"
+    safe_fields = {name: (_soft_ok([provider for provider in ("azure", "aws", "gcp")
+                                  if "dmi:" + name + ":" + provider in evidence])
+                          if item.get("ok") else item) for name, item in fields.items()}
+    return {"dmi": safe_fields, "waagent": _soft_ok(waagent_present) if waagent_err is None
+            else _soft_err(waagent_err), "guess": guess, "evidence": evidence}
+
+
+def _dpkg_inventory(*, list_path=None, timeout=30):
+    executable = shutil.which("dpkg-query")
+    if not executable:
+        return _soft_err("not_available")
+    if platform.system() != "Linux":
+        return _soft_err("unsupported_platform")
+    try:
+        done = subprocess.run([executable, "-W", "-f=${Package}\t${Version}\n"],
+                              shell=False, stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return _soft_err("timeout")
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+    if done.returncode:
+        detail = done.stderr[:500].decode("utf-8", "replace").strip()
+        return _soft_err("nonzero_exit", detail=detail or ("exit %d" % done.returncode))
+    text = done.stdout.decode("utf-8", errors="replace")
+    lines = [line for line in text.splitlines() if line.strip()]
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    written = None
+    if list_path is not None:
+        try:
+            Path(list_path).write_text(text, encoding="utf-8")
+            written = str(list_path)
+        except OSError as error:
+            return {"ok": True, "value": {"count": len(lines), "sha256": digest,
+                                          "list_path": _soft_err(type(error).__name__)}}
+    value = {"count": len(lines), "sha256": digest}
+    if written is not None:
+        value["list_path"] = _soft_ok(written)
+    return _soft_ok(value)
+
+
+def _tool_cache_inventory(path):
+    root = Path(path)
+    try:
+        if not root.is_dir():
+            return _soft_err("not_a_directory")
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+    tools = {}
+    errors = []
+    try:
+        names = sorted(entry.name for entry in root.iterdir())
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+    for name in names:
+        tool_dir = root / name
+        try:
+            if not tool_dir.is_dir():
+                continue
+            versions = sorted(child.name for child in tool_dir.iterdir() if child.is_dir())
+            tools[name] = versions
+        except OSError as error:
+            errors.append({"tool": name, "reason": type(error).__name__})
+    result = _soft_ok({"path": str(root.absolute()), "tools": tools})
+    if errors:
+        result["entry_errors"] = errors
+    return result
+
+
+_IMDS_COMPUTE_ALLOW = ("osType", "location", "vmSize", "sku", "offer", "version")
+_IMDS_READ_BYTES = 65536
+_IMDS_INSTANCE_URL = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
+
+
+def _sanitize_imds_payload(data):
+    if not isinstance(data, dict):
+        return {"type": type(data).__name__}
+    compute = data.get("compute")
+    if not isinstance(compute, dict):
+        return {}
+    return {"compute": {key: compute[key] for key in _IMDS_COMPUTE_ALLOW if key in compute}}
+
+
+def _build_imds_opener():
+    """IMDS fetcher: no HTTP proxy, no redirects."""
+    import urllib.request
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
+def _imds_facts(*, timeout=1.0):
+    """Optional cloud metadata; only when caller opts in (stdlib urllib, no proxy)."""
+    import urllib.error
+    import urllib.request
+    request = urllib.request.Request(_IMDS_INSTANCE_URL, headers={"Metadata": "true"})
+    opener = _build_imds_opener()
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(_IMDS_READ_BYTES)
+    except urllib.error.HTTPError as error:
+        return _soft_err("http_error", status=error.code)
+    except urllib.error.URLError as error:
+        reason = error.reason
+        name = type(reason).__name__ if reason is not None else "URLError"
+        return _soft_err("url_error", detail=name)
+    except TimeoutError:
+        return _soft_err("timeout")
+    except OSError as error:
+        return _soft_err(type(error).__name__)
+    loaded = _json_load_soft(raw.decode("utf-8", errors="replace"))
+    if not loaded["ok"]:
+        return loaded
+    return _soft_ok(_sanitize_imds_payload(loaded["value"]))
+
+
+def runner_fingerprint(*, environ=None, root="/", etc_root="/etc", sys_root="/sys",
+                       dpkg_list_path=None, imds=False, imds_timeout=1.0):
+    """CI runner image fingerprint; every probe fails soft. No IMDS unless imds=True."""
+    environ = environ if environ is not None else os.environ
+    tool_cache = _env_soft("RUNNER_TOOL_CACHE", environ)
+    if not tool_cache["ok"]:
+        tool_cache = _env_soft("AGENT_TOOLSDIRECTORY", environ)
+    caches = []
+    if tool_cache.get("ok"):
+        caches.append(_tool_cache_inventory(tool_cache["value"]))
+    fingerprint = {"schema": "runner-fingerprint/1",
+                   "github_actions_env": {key: _env_soft(key, environ) for key in _RUNNER_ENV_KEYS},
+                   "imagedata": _parse_imagedata(_imagedata_paths(root)),
+                   "os_identity": _os_identity(etc_root=etc_root),
+                   "kernel": _kernel_facts(),
+                   "python": {"implementation": platform.python_implementation(),
+                              "version": platform.python_version(),
+                              "bits": 64 if sys.maxsize > 2 ** 32 else 32},
+                   "cloud": _dmi_facts(sys_root=sys_root, root=root),
+                   "dpkg": _dpkg_inventory(list_path=dpkg_list_path),
+                   "tool_cache": tool_cache,
+                   "tool_cache_contents": caches,
+                   "imds": None}
+    if imds:
+        fingerprint["imds"] = _imds_facts(timeout=imds_timeout)
+    return fingerprint
+
+
+def runner_fingerprint_summary(fingerprint):
+    """Short human-readable summary for logs and GITHUB_STEP_SUMMARY."""
+    lines = ["Runner fingerprint (schema runner-fingerprint/1)"]
+    env = fingerprint.get("github_actions_env") or {}
+    for key in ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion"):
+        item = env.get(key) or {}
+        value = item.get("value") if item.get("ok") else ("(" + item.get("reason", "missing") + ")")
+        lines.append("%s: %s" % (key, value))
+    os_id = fingerprint.get("os_identity") or {}
+    if os_id.get("platform") == "Linux":
+        rel = (os_id.get("os_release") or {})
+        if rel.get("ok"):
+            parsed = rel["value"]
+            pretty = parsed.get("PRETTY_NAME") or "%s %s" % (parsed.get("ID", "?"), parsed.get("VERSION_ID", "?"))
+            lines.append("os: %s" % pretty)
+    cloud = fingerprint.get("cloud") or {}
+    if cloud.get("guess"):
+        lines.append("cloud_guess: %s (%s)" % (cloud["guess"], ", ".join(cloud.get("evidence") or []) or "no evidence"))
+    else:
+        lines.append("cloud_guess: (none)")
+    dpkg = fingerprint.get("dpkg") or {}
+    if dpkg.get("ok"):
+        lines.append("dpkg_packages: %s sha256=%s" % (dpkg["value"]["count"], dpkg["value"]["sha256"][:16] + "..."))
+    elif dpkg.get("reason"):
+        lines.append("dpkg_packages: (%s)" % dpkg["reason"])
+    cache = fingerprint.get("tool_cache_contents") or []
+    if cache and cache[0].get("ok"):
+        tools = cache[0]["value"]["tools"]
+        lines.append("tool_cache_tools: %s" % (", ".join(sorted(tools)) if tools else "(empty)"))
+    imds = fingerprint.get("imds")
+    if imds is not None:
+        if imds.get("ok"):
+            compute = (imds.get("value") or {}).get("compute") or {}
+            bits = ["%s=%s" % (key, compute[key]) for key in _IMDS_COMPUTE_ALLOW if key in compute]
+            lines.append("imds: ok" + (" (" + ", ".join(bits) + ")" if bits else ""))
+        else:
+            lines.append("imds: (%s)" % imds.get("reason", "failed"))
+    return "\n".join(lines) + "\n"
+
+
 def to_text(facts):
     """One "key: value" line per fact; tools as true/false. Easy to grep and paste."""
     def clean(value):
@@ -721,7 +1046,39 @@ def main(argv=None):
                         help="omit host name, addresses, routes, DNS and container hints")
     parser.add_argument("--no-probes", action="store_true",
                         help="do not run the docker / nvidia-smi probes")
+    parser.add_argument("--runner-env", action="store_true",
+                        help="emit CI runner image fingerprint (offline by default)")
+    parser.add_argument("--runner-env-json", action="store_true",
+                        help="with --runner-env, print runner-fingerprint/1 JSON instead of summary")
+    parser.add_argument("--runner-env-imds", action="store_true",
+                        help="with --runner-env, also query cloud instance metadata (short timeout)")
+    parser.add_argument("--runner-env-dpkg-list", metavar="PATH",
+                        help="with --runner-env on Linux, write full dpkg-query list to PATH")
+    parser.add_argument("--runner-env-github-summary", action="store_true",
+                        help="with --runner-env, append summary to GITHUB_STEP_SUMMARY when set")
     args = parser.parse_args(argv)
+    runner_flags = (args.runner_env_json or args.runner_env_imds or args.runner_env_dpkg_list
+                    or args.runner_env_github_summary)
+    if runner_flags and not args.runner_env:
+        print("runner-env flags require --runner-env", file=sys.stderr)
+        return 2
+    if args.runner_env:
+        fingerprint = runner_fingerprint(dpkg_list_path=args.runner_env_dpkg_list,
+                                         imds=args.runner_env_imds)
+        if args.runner_env_json:
+            print(to_json(fingerprint), end="")
+        else:
+            print(runner_fingerprint_summary(fingerprint), end="")
+        if args.runner_env_github_summary:
+            summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+            if summary_path:
+                try:
+                    with open(summary_path, "a", encoding="utf-8") as stream:
+                        stream.write("\n## Runner fingerprint\n\n")
+                        stream.write(runner_fingerprint_summary(fingerprint))
+                except OSError as error:
+                    print("GITHUB_STEP_SUMMARY: " + type(error).__name__, file=sys.stderr)
+        return 0
     try:
         facts = collect() if args.minimal else diagnose(
             directory=args.directory, versions=args.versions)
