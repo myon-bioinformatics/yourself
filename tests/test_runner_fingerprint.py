@@ -65,6 +65,29 @@ def test_imagedata_success(tmp_path, monkeypatch):
     assert fp["imagedata"]["value"]["object"]["image"] == "ubuntu-24.04"
 
 
+def test_image_os_version_in_fingerprint_and_summary():
+    environ = {"ImageOS": "ubuntu24", "ImageVersion": "20261004.327.1"}
+    fp = yourself.runner_fingerprint(environ=environ, root="/x", etc_root="/x", sys_root="/x")
+    assert fp["github_actions_env"]["ImageOS"] == {"ok": True, "value": "ubuntu24"}
+    assert fp["github_actions_env"]["ImageVersion"] == {"ok": True, "value": "20261004.327.1"}
+    summary = yourself.runner_fingerprint_summary(fp)
+    assert "ImageOS: ubuntu24" in summary
+    assert "ImageVersion: 20261004.327.1" in summary
+
+
+def test_imagedata_array_filters_group_detail_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
+    img_dir = tmp_path / "imagegeneration"
+    img_dir.mkdir()
+    payload = [{"group": "Image", "detail": "ubuntu-24.04", "secret": "drop", "extra": 99}]
+    (img_dir / "imagedata.json").write_text(json.dumps(payload), encoding="utf-8")
+    fp = yourself.runner_fingerprint(environ={}, root=str(tmp_path), etc_root=str(tmp_path), sys_root=str(tmp_path))
+    entry = fp["imagedata"]["value"]["entries"][0]
+    assert entry == {"group": "Image", "detail": "ubuntu-24.04"}
+    assert "secret" not in json.dumps(fp["imagedata"])
+    assert "extra" not in json.dumps(fp["imagedata"])
+
+
 def test_imagedata_github_array(tmp_path, monkeypatch):
     monkeypatch.setattr(yourself.platform, "system", lambda: "Linux")
     img_dir = tmp_path / "imagegeneration"
@@ -646,9 +669,14 @@ def test_imds_sends_metadata_header(monkeypatch):
     monkeypatch.setattr(yourself, "_build_imds_opener", lambda: Opener())
     yourself.runner_fingerprint(environ={}, root="/x", etc_root="/x", sys_root="/x", imds=True)
     request = captured["request"]
-    assert request.full_url.startswith("http://169.254.169.254/metadata/instance")
+    assert request.full_url == yourself._IMDS_INSTANCE_URL
     assert request.has_header("Metadata")
     assert request.get_header("Metadata") == "true"
+
+
+def test_imds_instance_url_pinned():
+    assert yourself._IMDS_INSTANCE_URL == (
+        "http://169.254.169.254/metadata/instance?api-version=2021-02-01")
 
 
 def test_imds_read_capped_at_64k(monkeypatch):

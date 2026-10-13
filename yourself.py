@@ -801,6 +801,7 @@ def _tool_cache_inventory(path):
 
 _IMDS_COMPUTE_ALLOW = ("osType", "location", "vmSize", "sku", "offer", "version")
 _IMDS_READ_BYTES = 65536
+_IMDS_INSTANCE_URL = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
 
 
 def _sanitize_imds_payload(data):
@@ -827,8 +828,7 @@ def _imds_facts(*, timeout=1.0):
     """Optional cloud metadata; only when caller opts in (stdlib urllib, no proxy)."""
     import urllib.error
     import urllib.request
-    url = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
-    request = urllib.request.Request(url, headers={"Metadata": "true"})
+    request = urllib.request.Request(_IMDS_INSTANCE_URL, headers={"Metadata": "true"})
     opener = _build_imds_opener()
     try:
         with opener.open(request, timeout=timeout) as response:

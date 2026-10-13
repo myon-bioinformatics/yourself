@@ -126,6 +126,22 @@ MUTATIONS = [
      '    elif "google" in blob:\n        guess = "gcp"',
      '    elif False:\n        guess = "gcp"',
      ["test_cloud_guess_gcp_from_dmi"]),
+    ("runner_image_env_summary_omitted",
+     '    for key in ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion"):',
+     '    for key in ("RUNNER_OS", "RUNNER_ARCH", "RUNNER_ENVIRONMENT"):',
+     ["test_image_os_version_in_fingerprint_and_summary"]),
+    ("runner_image_env_not_collected",
+     '"ImageOS", "ImageVersion",',
+     '',
+     ["test_image_os_version_in_fingerprint_and_summary"]),
+    ("imagedata_array_extra_keys_kept",
+     'entries.append({key: item[key] for key in ("group", "detail") if key in item})',
+     'entries.append(dict(item))',
+     ["test_imagedata_array_filters_group_detail_only"]),
+    ("imds_url_api_version_wrong",
+     '_IMDS_INSTANCE_URL = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"',
+     '_IMDS_INSTANCE_URL = "http://169.254.169.254/metadata/instance?api-version=2019-06-01"',
+     ["test_imds_instance_url_pinned", "test_imds_sends_metadata_header"]),
 ]
 
 
