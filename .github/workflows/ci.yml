@@ -10,7 +10,14 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    permissions:
+      contents: read
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-change-detection.yml@40bd74c4a36896509b506d6d06251255be6c77c7
+
   resolve-vendor:
+    if: needs.changes.outputs.product_changed == 'true'
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -67,7 +74,8 @@ jobs:
           retention-days: 14
 
   test:
-    needs: resolve-vendor
+    if: needs.changes.outputs.product_changed == 'true'
+    needs: [changes, resolve-vendor]
     name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -168,8 +176,8 @@ jobs:
           retention-days: 14
 
   failure-identity:
-    needs: test
-    if: always()
+    needs: [changes, test]
+    if: (always()) && needs.changes.outputs.product_changed == 'true'
     permissions:
       contents: read
       actions: read
@@ -179,3 +187,10 @@ jobs:
       expected-reports: '["test-report-ubuntu-latest-py3.10/junit.xml","test-report-ubuntu-latest-py3.11/junit.xml","test-report-ubuntu-latest-py3.12/junit.xml","test-report-ubuntu-latest-py3.13/junit.xml","test-report-ubuntu-latest-py3.14/junit.xml","test-report-windows-latest-py3.12/junit.xml","test-report-macos-latest-py3.12/junit.xml"]'
       artifact-pattern: "test-report-*"
       output-artifact: "failure-identity"
+
+  actionlint:
+    needs: changes
+    if: needs.changes.outputs.workflow_changed == 'true'
+    permissions:
+      contents: read
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-actionlint.yml@40bd74c4a36896509b506d6d06251255be6c77c7
