@@ -30,15 +30,14 @@ class VendorStagingTests(unittest.TestCase):
                 run = re.search(r'(?m)^' + indent + r'  run: >-\n((?:' + indent + r'    [^\n]*\n)+)', block)
                 self.assertIsNotNone(run)
                 command = ' '.join(line.strip() for line in run[1].splitlines())
-                if '$VENDOR_EVIDENCE_KIND' in command:
-                    self.assertIn('--promotion-receipt vendor-promotion.json', command)
+                self.assertNotIn('--promotion-receipt', command)
                 output = shlex.split(command)[shlex.split(command).index('--output') + 1]
                 upload = re.split(r'\n' + indent + r'- ', tail, maxsplit=1)[1]
                 self.assertIn('path: ' + output, upload.split('retention-days:', 1)[0])
                 commands.append(command)
         self.assertTrue(commands)
         for command in commands:
-            kinds = ('locked', 'candidate') if '$VENDOR_EVIDENCE_KIND' in command else (shlex.split(command)[shlex.split(command).index('--kind') + 1],)
+            kinds = (shlex.split(command)[shlex.split(command).index('--kind') + 1],)
             for kind in kinds:
                 for receipt in (False, True):
                     with self.subTest(command=command, kind=kind, receipt=receipt), tempfile.TemporaryDirectory() as directory:
@@ -80,7 +79,7 @@ class VendorStagingTests(unittest.TestCase):
                         self.assertEqual(set(evidence['candidate']), expected)
                         self.assertEqual(evidence['kind'], kind)
                         self.assertEqual(set(evidence['legacy']), set(legacy))
-                        if receipt and kind == 'candidate' and '--promotion-receipt' in args:
+                        if receipt and '--promotion-receipt' in args:
                             runtime.append('vendor-promotion.json')
                         self.assertEqual(set(evidence['runtime']), set(runtime))
                         expected |= set(legacy) | set(runtime)
