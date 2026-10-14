@@ -47,7 +47,9 @@ def test_public_vendor_ci_updates_without_repository_writes():
     assert not any(s.get('name') == 'Update public vendor files for this run' for s in resolve)
     dispatch = ci.get('on', {}).get('workflow_dispatch')
     assert dispatch is None or not (isinstance(dispatch, dict) and 'vendor-mode' in dispatch.get('inputs', {}))
-    assert jobs['test']['needs'] == 'resolve-vendor'
+    assert set(jobs['test']['needs']) == {'changes', 'resolve-vendor'}
+    assert jobs['resolve-vendor']['needs'] == 'changes'
+    assert jobs['test']['if'] == "needs.changes.outputs.product_changed == 'true'"
     assert not any('vendor_sync.py promote' in s.get('run', '') for steps in (resolve, test) for s in steps)
     assert not any('vendor_sync.py update' in s.get('run', '') for steps in (resolve, test) for s in steps)
     baseline = next(i for i,s in enumerate(resolve) if s.get('name') == 'Verify checked-in vendor copies')
