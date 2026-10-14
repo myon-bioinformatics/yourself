@@ -30,8 +30,8 @@ def test_vendor_lock_provenance():
         ('LICENSE', 'vendor/gh_identity-LICENSE')}
     assert len(ghi_entries) == 2
     for entry in lock['files']:
-        assert entry['ref'] == 'refs/heads/main'
-        assert re.fullmatch(r'[0-9a-f]{40}', entry['commit'])
+        assert re.fullmatch(r'[0-9a-f]{40}', entry['ref'])
+        assert entry['ref'] == entry['commit']
         data = (ROOT / entry['destination']).read_bytes()
         assert hashlib.sha256(data).hexdigest() == entry['sha256']
         assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == entry['blob_sha']
@@ -44,23 +44,16 @@ def test_public_vendor_ci_updates_without_repository_writes():
     jobs = ci['jobs']
     resolve = jobs['resolve-vendor']['steps']
     test = jobs['test']['steps']
-    update = next(s for s in resolve if s.get('name') == 'Update public vendor files for this run')
-    assert update['if'] == "inputs.vendor-mode != 'locked'"
-    assert update['shell'] == 'bash'
-    assert not any(word in update['run'] for word in ('|| true', '|| :', 'set +e'))
-    assert 'continue-on-error' not in update
-    assert update['run'].splitlines() == [
-        'python -S .vendor-sync-tools/vendor_sync.py promote --manifest vendor.lock.json | tee vendor-promotion.json',
-        'python -S -m json.tool vendor-promotion.json > /dev/null',
-        'python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json']
-    assert ci['on']['workflow_dispatch']['inputs']['vendor-mode']['default'] == 'update'
+    assert not any(s.get('name') == 'Update public vendor files for this run' for s in resolve)
+    dispatch = ci.get('on', {}).get('workflow_dispatch')
+    assert dispatch is None or not (isinstance(dispatch, dict) and 'vendor-mode' in dispatch.get('inputs', {}))
     assert jobs['test']['needs'] == 'resolve-vendor'
-    assert sum('vendor_sync.py promote' in s.get('run', '') for steps in (resolve, test) for s in steps) == 1
+    assert not any('vendor_sync.py promote' in s.get('run', '') for steps in (resolve, test) for s in steps)
+    assert not any('vendor_sync.py update' in s.get('run', '') for steps in (resolve, test) for s in steps)
     baseline = next(i for i,s in enumerate(resolve) if s.get('name') == 'Verify checked-in vendor copies')
     enroll = next(i for i,s in enumerate(resolve) if s.get('name') == 'Exercise canonical GHI enrollment')
     materialize = next(i for i,s in enumerate(resolve) if s.get('name') == 'Recreate locked vendor files from GitHub')
-    promotion = resolve.index(update)
-    assert baseline < enroll < materialize < promotion
+    assert baseline < enroll < materialize
     assert 'if' not in resolve[enroll]
     assert 'vendor_sync.py enroll --manifest vendor.lock.json | tee vendor-enrollment.json' in resolve[enroll]['run']
     assert all(name in resolve[materialize]['run'] for name in ('gh_identity.py', 'gh_identity-LICENSE'))

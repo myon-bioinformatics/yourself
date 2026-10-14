@@ -9,11 +9,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize(('step_name', 'mode'), [
-    ('Exercise canonical GHI enrollment', 'enroll'),
-    ('Update public vendor files for this run', 'promote'),
-])
-def test_failed_vendor_operation_does_not_execute_check(tmp_path, step_name, mode):
+def test_failed_vendor_operation_does_not_execute_check(tmp_path):
+    step_name = 'Exercise canonical GHI enrollment'
+    mode = 'enroll'
     import yaml
     ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
     step = next(s for s in ci['jobs']['resolve-vendor']['steps'] if s.get('name') == step_name)
