@@ -943,7 +943,10 @@ def _proxy_for(host, environ):
     parts = urllib.parse.urlsplit(value if "://" in value else "http://" + value)
     if parts.scheme != "http" or not parts.hostname:
         return {"error": "unsupported_proxy"}
-    return {"host": parts.hostname, "port": parts.port or 80, "user": parts.username, "password": parts.password}
+    unquote = urllib.parse.unquote
+    return {"host": parts.hostname, "port": parts.port or 80,
+            "user": None if parts.username is None else unquote(parts.username),
+            "password": None if parts.password is None else unquote(parts.password)}
 
 
 def _connect_via(sock, host, port, proxy):
@@ -951,7 +954,7 @@ def _connect_via(sock, host, port, proxy):
     import base64
     lines = ["CONNECT %s:%d HTTP/1.1" % (host, port), "Host: %s:%d" % (host, port)]
     if proxy["user"] is not None:
-        token = base64.b64encode(("%s:%s" % (proxy["user"], proxy["password"] or "")).encode()).decode()
+        token = base64.b64encode(("%s:%s" % (proxy["user"], proxy["password"] or "")).encode("utf-8")).decode("ascii")
         lines.append("Proxy-Authorization: Basic " + token)
     sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
     data = b""

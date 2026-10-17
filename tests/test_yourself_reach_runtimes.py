@@ -60,6 +60,10 @@ def test_proxy_denied_with_reason_and_credentials_sent():
     assert seen[0].startswith("CONNECT cdn.example.com:443 HTTP/1.1\r\n")
     assert "Proxy-Authorization: Basic dTpw" in seen[0]
     assert "u:p" not in json.dumps(row)
+    seen = []
+    port = serve_once(b"HTTP/1.1 403 Forbidden\r\n\r\n", seen)
+    yourself.reach(["cdn.example.com"], environ={"HTTPS_PROXY": "http://a%40b:p%3Aq@127.0.0.1:%d" % port})
+    assert "Proxy-Authorization: Basic YUBiOnA6cQ==" in seen[0]
 
 
 def test_proxy_without_reason_and_bad_reply():
