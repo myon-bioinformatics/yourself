@@ -14,7 +14,7 @@ I/O in future upstream versions.
 ## Bootstrap with the canonical tool
 
 CI and local enrollment use the shared stdlib tool pinned at
-`b000e5967cb7596f6f9f20fe396a686fdc700c16`.
+`1eda992aa6fa31a902e2c06428e53ab17e8fe3c1`.
 
 `enroll` verifies every existing destination against the lock before downloading
 anything. An existing mismatch fails instead of being repaired. Only missing
@@ -55,7 +55,7 @@ An agent can use the same canonical CLI after adding complete lock entries:
 ```bash
 set -euo pipefail
 git clone https://github.com/myon-bioinformatics/myon-bioinformatics.git .vendor-sync-tools
-git -C .vendor-sync-tools checkout --detach b000e5967cb7596f6f9f20fe396a686fdc700c16
+git -C .vendor-sync-tools checkout --detach 1eda992aa6fa31a902e2c06428e53ab17e8fe3c1
 python -S .vendor-sync-tools/vendor_sync.py enroll --manifest vendor.lock.json | tee vendor-enrollment.json
 python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
 # Restore missing or mismatched locked files when restoration is intended:
@@ -77,7 +77,7 @@ later to reproduce the sources tested in that run.
 
 Vendor artifact membership is now derived exclusively by the parent
 `vendor_stage.py`, checked out with `vendor_sync.py` at full commit
-`b000e5967cb7596f6f9f20fe396a686fdc700c16`. Workflow uploads point to its generated
+`1eda992aa6fa31a902e2c06428e53ab17e8fe3c1`. Workflow uploads point to its generated
 directory; adding a locked source or LICENSE needs no upload path-list edit.
 Artifact names and repository-relative paths inside each artifact are preserved.
 `vendor-evidence.json` is additional metadata with byte hashes and separate
