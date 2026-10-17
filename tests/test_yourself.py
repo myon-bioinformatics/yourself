@@ -107,9 +107,17 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(proc.stdout, "")
 
     def test_stdlib_only_no_network_imports(self):
-        tree = ast.parse((ROOT / "yourself.py").read_text())
+        tree = ast.parse((ROOT / "yourself.py").read_text(encoding="utf-8"))
+        # socket is allowed only inside the explicit opt-in reachability helpers (--reach).
+        opt_in = {"reach", "_reach_one", "_connect_via"}
+        allowed = {id(n) for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name in opt_in
+                   for n in ast.walk(f)}
+        self.assertTrue(allowed)
         modules = []
         for node in ast.walk(tree):
+            if id(node) in allowed and isinstance(node, (ast.Import, ast.ImportFrom)):
+                self.assertTrue(all(a.name in ("socket", "ssl", "time", "base64") for a in node.names))
+                continue
             if isinstance(node, ast.Import):
                 modules.extend(a.name.split(".")[0] for a in node.names)
             elif isinstance(node, ast.ImportFrom):

@@ -1,6 +1,7 @@
 """Read-only environment facts, using the standard library only.
 
-No network requests, package installation or project-file content reads.
+No network requests (except the opt-in ``reach`` / ``--reach`` TLS handshake),
+package installation or project-file content reads.
 Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
@@ -21,6 +22,7 @@ __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
            "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
            "resource_facts", "session_facts", "runner_fingerprint", "runner_fingerprint_summary",
+           "reach", "runtime_facts",
            "main"]
 
 
@@ -927,6 +929,182 @@ def runner_fingerprint_summary(fingerprint):
     return "\n".join(lines) + "\n"
 
 
+_HOST = re.compile(r"^([A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::(\d{1,5}))?$")
+
+
+def _proxy_for(host, environ):
+    """Proxy endpoint for an HTTPS request to host, or None when direct (no proxy or NO_PROXY)."""
+    import urllib.parse
+    import urllib.request
+    value = environ.get("HTTPS_PROXY") or environ.get("https_proxy")
+    no_proxy = environ.get("NO_PROXY") or environ.get("no_proxy") or ""
+    if not value or (no_proxy and urllib.request.proxy_bypass_environment(host, {"no": no_proxy})):
+        return None
+    parts = urllib.parse.urlsplit(value if "://" in value else "http://" + value)
+    if parts.scheme != "http" or not parts.hostname:
+        return {"error": "unsupported_proxy"}
+    return {"host": parts.hostname, "port": parts.port or 80, "user": parts.username, "password": parts.password}
+
+
+def _connect_via(sock, host, port, proxy):
+    """Send CONNECT; return None when established, else the proxy's status and short reason."""
+    import base64
+    lines = ["CONNECT %s:%d HTTP/1.1" % (host, port), "Host: %s:%d" % (host, port)]
+    if proxy["user"] is not None:
+        token = base64.b64encode(("%s:%s" % (proxy["user"], proxy["password"] or "")).encode()).decode()
+        lines.append("Proxy-Authorization: Basic " + token)
+    sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+    data = b""
+    while b"\r\n\r\n" not in data and len(data) < 16384:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    head, _, rest = data.partition(b"\r\n\r\n")
+    status = re.match(rb"HTTP/1\.[01] (\d{3})", head)
+    if not status:
+        return "bad_proxy_reply"
+    if status.group(1) == b"200":
+        return None
+    reason = " ".join(rest[:200].decode("utf-8", "replace").split())[:120]
+    return status.group(1).decode() + (" " + reason if reason else "")
+
+
+def _reach_one(host, port, *, timeout, environ, cafile):
+    import socket
+    import ssl
+    proxy = _proxy_for(host, environ)
+    row = {"via": "proxy" if proxy else "direct", "status": None, "detail": None}
+    if proxy and proxy.get("error"):
+        return dict(row, status="unreachable", detail=proxy["error"])
+    try:
+        sock = socket.create_connection((proxy["host"], proxy["port"]) if proxy else (host, port), timeout=timeout)
+    except socket.gaierror:
+        return dict(row, status="dns", detail="proxy" if proxy else "host")
+    except ConnectionRefusedError:
+        return dict(row, status="refused", detail="proxy" if proxy else "host")
+    except (socket.timeout, TimeoutError):
+        return dict(row, status="timeout")
+    except OSError as error:
+        return dict(row, status="unreachable", detail=type(error).__name__)
+    try:
+        if proxy:
+            denied = _connect_via(sock, host, port, proxy)
+            if denied:
+                return dict(row, status="unreachable" if denied == "bad_proxy_reply" else "proxy_denied", detail=denied)
+        context = ssl.create_default_context(cafile=cafile)
+        with context.wrap_socket(sock, server_hostname=host) as tls:
+            return dict(row, status="ok", detail=tls.version())
+    except ssl.SSLError as error:
+        return dict(row, status="tls_error", detail=getattr(error, "reason", None) or type(error).__name__)
+    except (socket.timeout, TimeoutError):
+        return dict(row, status="timeout")
+    except OSError as error:
+        return dict(row, status="unreachable", detail=type(error).__name__)
+    finally:
+        sock.close()
+
+
+def reach(hosts, *, timeout=5, environ=None, cafile=None):
+    """Opt-in HTTPS reachability: TCP (through HTTPS_PROXY with CONNECT unless NO_PROXY
+    covers the host), then a TLS handshake. No HTTP request is sent to the site and
+    nothing is read from it; the proxy URL and credentials are never reported.
+
+    ``status`` per host: ``ok`` (``detail`` is the TLS version), ``proxy_denied``
+    (``detail`` is the CONNECT status and the proxy's short reason), ``dns``,
+    ``refused``, ``timeout``, ``tls_error`` (often a proxy CA missing from the trust
+    store; ``SSL_CERT_FILE`` is used when set), ``unreachable`` or ``invalid_host``.
+    Hosts are ``name`` or ``name:port`` (default 443).
+    """
+    import time
+    if isinstance(hosts, str):
+        raise TypeError("hosts must be a sequence, not a string")
+    hosts = list(hosts)
+    if not 1 <= len(hosts) <= 20:
+        raise ValueError("give 1 to 20 hosts")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 30:
+        raise ValueError("timeout must be a finite number in (0, 30]")
+    environ = os.environ if environ is None else environ
+    cafile = cafile or environ.get("SSL_CERT_FILE") or None
+    rows = []
+    for raw in hosts:
+        match = _HOST.match(raw) if isinstance(raw, str) else None
+        port = int(match.group(2) or 443) if match else 0
+        if not match or ".." in raw or not 0 < port < 65536:
+            rows.append({"host": str(raw)[:80], "via": None, "status": "invalid_host", "detail": None, "ms": None})
+            continue
+        started = time.monotonic()
+        row = _reach_one(match.group(1), port, timeout=timeout, environ=environ, cafile=cafile)
+        rows.append(dict({"host": raw}, **row, ms=int((time.monotonic() - started) * 1000)))
+    return rows
+
+
+def _playwright_dirs(environ):
+    value = environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if value and value != "0":
+        return [Path(value)]
+    home = Path.home()
+    if sys.platform == "win32":
+        base = environ.get("LOCALAPPDATA")
+        return [Path(base) / "ms-playwright"] if base else []
+    if sys.platform == "darwin":
+        return [home / "Library" / "Caches" / "ms-playwright"]
+    return [Path(environ.get("XDG_CACHE_HOME") or home / ".cache") / "ms-playwright"]
+
+
+def _uv_python_dirs(environ):
+    value = environ.get("UV_PYTHON_INSTALL_DIR")
+    if value:
+        return [Path(value)]
+    if sys.platform == "win32":
+        base = environ.get("APPDATA")
+        return [Path(base) / "uv" / "python"] if base else []
+    return [Path(environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "uv" / "python"]
+
+
+def runtime_facts(*, environ=None, versions=False, timeout=2):
+    """Installed runtimes from directory names only (nothing is run unless ``versions``).
+
+    * Playwright browser builds (``PLAYWRIGHT_BROWSERS_PATH`` or the default cache):
+      ``chromium`` (full) and ``chromium_headless_shell`` with revisions, so a job
+      can tell whether ``--only-shell`` / ``--no-shell`` matches what is present;
+    * uv-managed interpreters (``UV_PYTHON_INSTALL_DIR`` or uv's default);
+    * ``python3.X`` executables on PATH (3.8-3.14);
+    * with ``versions``: git's version and whether it has
+      ``git merge-tree --write-tree`` (2.38+).
+    """
+    environ = os.environ if environ is None else environ
+    facts = {"playwright": {"path": None, "builds": []}, "uv_pythons": [], "path_pythons": [], "git": None}
+    for directory in _playwright_dirs(environ):
+        try:
+            names = sorted(p.name for p in directory.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        facts["playwright"]["path"] = str(directory)
+        for name in names:
+            match = re.fullmatch(r"([a-z_]+?)(?:-(\d+))?", name)
+            if match and match.group(2):
+                facts["playwright"]["builds"].append({"name": match.group(1), "revision": int(match.group(2))})
+        break
+    for directory in _uv_python_dirs(environ):
+        try:
+            names = sorted(p.name for p in directory.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        for name in names:
+            match = re.fullmatch(r"(cpython|pypy|graalpy)-(\d+\.\d+\.\d+[a-z0-9+]*)-(.+)", name)
+            if match:
+                facts["uv_pythons"].append({"implementation": match.group(1), "version": match.group(2),
+                                            "platform": match.group(3)})
+    facts["path_pythons"] = ["3.%d" % minor for minor in range(8, 15) if shutil.which("python3.%d" % minor)]
+    if versions:
+        row = command_inventory(["git"], versions=True, timeout=timeout)[0]
+        parts = tuple(int(x) for x in (row["version"] or "0").split(".")[:2])
+        facts["git"] = {"version": row["version"], "status": row["status"],
+                        "merge_tree_write_tree": parts >= (2, 38) if row["version"] else None}
+    return facts
+
+
 def to_text(facts):
     """One "key: value" line per fact; tools as true/false. Easy to grep and paste."""
     def clean(value):
@@ -1021,6 +1199,20 @@ def to_text(facts):
         if tool.get("version"):
             value = "true " + tool["version"]
         put("tool." + tool["name"], value)
+    runtimes = facts.get("runtimes")
+    if runtimes is not None:
+        builds = runtimes["playwright"]["builds"]
+        put("playwright_browsers", ", ".join("%s-%d" % (b["name"], b["revision"]) for b in builds)
+            or ("(none in %s)" % runtimes["playwright"]["path"] if runtimes["playwright"]["path"] else "(no cache)"))
+        if builds:
+            names = {b["name"] for b in builds}
+            put("playwright_chromium", "full+shell" if {"chromium", "chromium_headless_shell"} <= names
+                else "full only (--no-shell)" if "chromium" in names
+                else "shell only (--only-shell)" if "chromium_headless_shell" in names else "none")
+        put("uv_pythons", ", ".join(p["version"] for p in runtimes["uv_pythons"]) or "(none)")
+        put("path_pythons", ", ".join(runtimes["path_pythons"]) or "(none)")
+        if runtimes["git"]:
+            put("git_merge_tree_write_tree", runtimes["git"]["merge_tree_write_tree"])
     listeners = facts.get("listeners")
     if listeners is not None:
         if not listeners.get("measured"):
@@ -1046,6 +1238,10 @@ def main(argv=None):
                         help="omit host name, addresses, routes, DNS and container hints")
     parser.add_argument("--no-probes", action="store_true",
                         help="do not run the docker / nvidia-smi probes")
+    parser.add_argument("--reach", nargs="+", metavar="HOST",
+                        help="opt-in: TCP + TLS handshake to each HOST[:PORT] (via HTTPS_PROXY unless NO_PROXY); "
+                             "prints one line per host and exits 1 unless all are ok")
+    parser.add_argument("--reach-timeout", type=float, default=5)
     parser.add_argument("--runner-env", action="store_true",
                         help="emit CI runner image fingerprint (offline by default)")
     parser.add_argument("--runner-env-json", action="store_true",
@@ -1062,6 +1258,21 @@ def main(argv=None):
     if runner_flags and not args.runner_env:
         print("runner-env flags require --runner-env", file=sys.stderr)
         return 2
+    if args.reach:
+        try:
+            rows = reach(args.reach, timeout=args.reach_timeout)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(to_json({"reach": rows}), end="")
+        else:
+            for row in rows:
+                detail = " (%s)" % row["detail"] if row["detail"] else ""
+                via = " via " + row["via"] if row["via"] else ""
+                ms = " %dms" % row["ms"] if row["ms"] is not None else ""
+                print("reach.%s: %s%s%s%s" % (row["host"], row["status"], detail, via, ms))
+        return 0 if all(row["status"] == "ok" for row in rows) else 1
     if args.runner_env:
         fingerprint = runner_fingerprint(dpkg_list_path=args.runner_env_dpkg_list,
                                          imds=args.runner_env_imds)
@@ -1097,6 +1308,7 @@ def main(argv=None):
             facts["hosts"] = hosts_facts()
         if not args.no_probes:
             facts["probes"] = probe_all()
+        facts["runtimes"] = runtime_facts(versions=args.versions)
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
