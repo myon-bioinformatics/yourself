@@ -29,7 +29,7 @@ print(yourself.to_json(yourself.collect(include_host=True)))
 
 ## Supported / unsupported
 
-- Read-only OS/runtime facts using stdlib APIs; no shell, network requests, package installation, service start/stop or build execution. Fixed version-only subprocesses require `versions=True` / `--versions`.
+- Read-only OS/runtime facts using stdlib APIs; no shell, network requests (except the opt-in `--reach` handshake below), package installation, service start/stop or build execution. Fixed version-only subprocesses require `versions=True` / `--versions`.
 - Directory observation is opt-in, shallow, includes hidden names, never reads file contents and counts symlinks without following them. Symlink roots are rejected. Individual entry errors are reported; invalid/unreadable roots raise.
 - A sorted sample is deterministic for the same directory snapshot. Environment values can change. Filesystem races are not isolated.
 - Default output omits host name and directory. Opt-in names/paths can identify a machine or project; choose what to include before sharing.
@@ -131,6 +131,28 @@ It records GitHub Actions env vars (`RUNNER_OS`, `ImageOS`, `ImageVersion`, tool
 ```sh
 python scripts/runner_fingerprint_mutations.py
 ```
+
+## Can this session reach a host? (`--reach`)
+
+```sh
+python yourself.py --reach pypi.org registry.npmjs.org cdn.jsdelivr.net github.com
+# reach.pypi.org: ok (TLSv1.3) via direct 73ms
+# reach.cdn.jsdelivr.net: proxy_denied (403 request blocked: no rule or allowlist entry allows host "cdn.jsdelivr.net") via proxy 289ms
+```
+
+Opt-in and the only network use in this module: for each `HOST[:PORT]` (default 443)
+it opens TCP (through `HTTPS_PROXY` with `CONNECT`, unless `NO_PROXY` covers the host)
+and completes a TLS handshake, then closes. No HTTP request is sent to the site and
+nothing is read from it; the proxy URL and credentials are never printed. Statuses:
+`ok`, `proxy_denied` (with the CONNECT status and the proxy's short reason), `dns`,
+`refused`, `timeout`, `tls_error` (often a proxy CA missing from the trust store;
+`SSL_CERT_FILE` is used when set), `unreachable`, `invalid_host`. Exit 0 when all are
+`ok`, else 1; `--format json` gives the rows; `--reach-timeout` (default 5 s).
+
+The default report also lists installed runtimes from directory names only: Playwright
+browser builds with revisions (`playwright_chromium: full+shell`, `shell only
+(--only-shell)` or `full only (--no-shell)`), uv-managed interpreters, `python3.X` on
+PATH and, with `--versions`, whether git has `merge-tree --write-tree` (2.38+).
 
 ## CLI
 
