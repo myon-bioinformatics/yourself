@@ -489,8 +489,14 @@ def hosts_facts(*, etc_root="/etc", proc_root="/proc"):
     """
     wanted = ("localhost", "host.docker.internal", "gateway.docker.internal")
     found = {name: [] for name in wanted}
+    hosts_path = Path(etc_root) / "hosts"
+    if not hosts_path.exists() and platform.system() == "Windows":
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        win_path = Path(system_root) / "System32" / "drivers" / "etc" / "hosts"
+        if win_path.exists():
+            hosts_path = win_path
     try:
-        for line in (Path(etc_root) / "hosts").read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in hosts_path.read_text(encoding="utf-8", errors="replace").splitlines():
             fields = line.split("#", 1)[0].split()
             for name in fields[1:]:
                 if name in found and fields[0] not in found[name]:

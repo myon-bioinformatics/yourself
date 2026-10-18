@@ -48,6 +48,17 @@ def test_missing_command_is_not_installed_without_running(monkeypatch):
     assert yourself.probe(("nvidia-smi", "-L")) == {"ok": False, "lines": [], "error": "not_installed"}
 
 
+def test_hosts_facts_windows_fallback(tmp_path, monkeypatch):
+    win_dir = tmp_path / "Windows" / "System32" / "drivers" / "etc"
+    win_dir.mkdir(parents=True)
+    (win_dir / "hosts").write_text("127.0.0.1 localhost\n")
+    monkeypatch.setattr(yourself.platform, "system", lambda: "Windows")
+    monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
+    out = yourself.hosts_facts(etc_root=tmp_path / "nonexistent")
+    assert out["measured"] is True
+    assert out["names"]["localhost"] == ["127.0.0.1"]
+
+
 def test_unknown_probe_name():
     with pytest.raises(ValueError):
         yourself.probe_all(["rm"])
