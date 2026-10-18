@@ -54,7 +54,15 @@ def test_hosts_facts_windows_fallback(tmp_path, monkeypatch):
     (win_dir / "hosts").write_text("127.0.0.1 localhost\n")
     monkeypatch.setattr(yourself.platform, "system", lambda: "Windows")
     monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
-    out = yourself.hosts_facts(etc_root=tmp_path / "nonexistent")
+
+    orig_exists = yourself.Path.exists
+    def mock_exists(self):
+        if str(self).replace("\\", "/").endswith("/etc/hosts") and not str(self).startswith(str(tmp_path)):
+            return False
+        return orig_exists(self)
+
+    monkeypatch.setattr(yourself.Path, "exists", mock_exists)
+    out = yourself.hosts_facts()
     assert out["measured"] is True
     assert out["names"]["localhost"] == ["127.0.0.1"]
 

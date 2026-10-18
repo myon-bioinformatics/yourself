@@ -489,8 +489,9 @@ def hosts_facts(*, etc_root="/etc", proc_root="/proc"):
     """
     wanted = ("localhost", "host.docker.internal", "gateway.docker.internal")
     found = {name: [] for name in wanted}
+    is_default_etc = (Path(etc_root) == Path("/etc"))
     hosts_path = Path(etc_root) / "hosts"
-    if not hosts_path.exists() and platform.system() == "Windows":
+    if is_default_etc and not hosts_path.exists() and platform.system() == "Windows":
         system_root = os.environ.get("SystemRoot", r"C:\Windows")
         win_path = Path(system_root) / "System32" / "drivers" / "etc" / "hosts"
         if win_path.exists():
