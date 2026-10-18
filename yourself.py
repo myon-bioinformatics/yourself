@@ -140,7 +140,8 @@ _COMMANDS = {
     # clipboard, cloud/database CLIs). Never executed by this module.
     'nvidia-smi': None, 'make': None, 'java': None, 'go': None, 'rustc': None,
     'cargo': None, 'deno': None, 'bun': None, 'chromium': None,
-    'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
+    'google-chrome': None, 'firefox': None, 'microsoft-edge': None, 'msedge': None,
+    'xclip': None, 'xsel': None,
     'wl-copy': None, 'pbcopy': None, 'sqlite3': None, 'psql': None,
     'kubectl': None, 'terraform': None, 'aws': None, 'gcloud': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
@@ -1062,6 +1063,32 @@ def _playwright_dirs(environ):
     return [Path(environ.get("XDG_CACHE_HOME") or home / ".cache") / "ms-playwright"]
 
 
+def _puppeteer_dirs(environ):
+    value = environ.get("PUPPETEER_CACHE_DIR")
+    if value:
+        return [Path(value)]
+    home = Path.home()
+    if sys.platform == "win32":
+        base = environ.get("LOCALAPPDATA")
+        return [Path(base) / "puppeteer"] if base else []
+    if sys.platform == "darwin":
+        return [home / "Library" / "Caches" / "puppeteer"]
+    return [Path(environ.get("XDG_CACHE_HOME") or home / ".cache") / "puppeteer"]
+
+
+def _cypress_dirs(environ):
+    value = environ.get("CYPRESS_CACHE_FOLDER")
+    if value:
+        return [Path(value)]
+    home = Path.home()
+    if sys.platform == "win32":
+        base = environ.get("LOCALAPPDATA")
+        return [Path(base) / "Cypress" / "Cache"] if base else []
+    if sys.platform == "darwin":
+        return [home / "Library" / "Caches" / "Cypress"]
+    return [Path(environ.get("XDG_CACHE_HOME") or home / ".cache") / "Cypress"]
+
+
 def _uv_python_dirs(environ):
     value = environ.get("UV_PYTHON_INSTALL_DIR")
     if value:
@@ -1078,13 +1105,18 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
     * Playwright browser builds (``PLAYWRIGHT_BROWSERS_PATH`` or the default cache):
       ``chromium`` (full) and ``chromium_headless_shell`` with revisions, so a job
       can tell whether ``--only-shell`` / ``--no-shell`` matches what is present;
+    * Puppeteer installed browser builds (``PUPPETEER_CACHE_DIR`` or default cache);
+    * Cypress installed binary versions (``CYPRESS_CACHE_FOLDER`` or default cache);
     * uv-managed interpreters (``UV_PYTHON_INSTALL_DIR`` or uv's default);
     * ``python3.X`` executables on PATH (3.8-3.14);
     * with ``versions``: git's version and whether it has
       ``git merge-tree --write-tree`` (2.38+).
     """
     environ = os.environ if environ is None else environ
-    facts = {"playwright": {"path": None, "builds": []}, "uv_pythons": [], "path_pythons": [], "git": None}
+    facts = {"playwright": {"path": None, "builds": []},
+             "puppeteer": {"path": None, "builds": []},
+             "cypress": {"path": None, "versions": []},
+             "uv_pythons": [], "path_pythons": [], "git": None}
     for directory in _playwright_dirs(environ):
         try:
             names = sorted(p.name for p in directory.iterdir() if p.is_dir())
@@ -1095,6 +1127,32 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
             match = re.fullmatch(r"([a-z_]+?)(?:-(\d+))?", name)
             if match and match.group(2):
                 facts["playwright"]["builds"].append({"name": match.group(1), "revision": int(match.group(2))})
+        break
+    for directory in _puppeteer_dirs(environ):
+        try:
+            entries = sorted(p for p in directory.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        facts["puppeteer"]["path"] = str(directory)
+        for entry in entries:
+            try:
+                subdirs = sorted(s.name for s in entry.iterdir() if s.is_dir())
+            except OSError:
+                subdirs = []
+            if subdirs:
+                for v in subdirs:
+                    facts["puppeteer"]["builds"].append({"name": entry.name, "revision": v})
+            else:
+                facts["puppeteer"]["builds"].append({"name": entry.name, "revision": "present"})
+        break
+    for directory in _cypress_dirs(environ):
+        try:
+            names = sorted(p.name for p in directory.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        facts["cypress"]["path"] = str(directory)
+        for name in names:
+            facts["cypress"]["versions"].append(name)
         break
     for directory in _uv_python_dirs(environ):
         try:
@@ -1219,6 +1277,12 @@ def to_text(facts):
             put("playwright_chromium", "full+shell" if {"chromium", "chromium_headless_shell"} <= names
                 else "full only (--no-shell)" if "chromium" in names
                 else "shell only (--only-shell)" if "chromium_headless_shell" in names else "none")
+        pup_builds = runtimes.get("puppeteer", {}).get("builds", [])
+        if pup_builds:
+            put("puppeteer_browsers", ", ".join("%s-%s" % (b["name"], b["revision"]) for b in pup_builds))
+        cyp_vers = runtimes.get("cypress", {}).get("versions", [])
+        if cyp_vers:
+            put("cypress_versions", ", ".join(cyp_vers))
         put("uv_pythons", ", ".join(p["version"] for p in runtimes["uv_pythons"]) or "(none)")
         put("path_pythons", ", ".join(runtimes["path_pythons"]) or "(none)")
         if runtimes["git"]:

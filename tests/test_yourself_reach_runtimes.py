@@ -137,18 +137,24 @@ def test_direct_paths_and_no_proxy(monkeypatch):
 
 def test_runtime_facts_from_directories(tmp_path, monkeypatch):
     browsers, pythons = tmp_path / "pw", tmp_path / "uv"
+    pup_dir, cyp_dir = tmp_path / "pup", tmp_path / "cyp"
     for name in ("chromium-1194", "chromium_headless_shell-1194", "ffmpeg-1011", ".links"):
         (browsers / name).mkdir(parents=True)
     (browsers / "README").write_text("x", encoding="utf-8")
     for name in ("cpython-3.10.20-linux-x86_64-gnu", "pypy-3.11.13-linux-x86_64-gnu", ".lock", "junk"):
         (pythons / name).mkdir(parents=True)
-    env = {"PLAYWRIGHT_BROWSERS_PATH": str(browsers), "UV_PYTHON_INSTALL_DIR": str(pythons)}
+    (pup_dir / "chrome" / "123.0.0").mkdir(parents=True)
+    (cyp_dir / "13.6.0").mkdir(parents=True)
+    env = {"PLAYWRIGHT_BROWSERS_PATH": str(browsers), "UV_PYTHON_INSTALL_DIR": str(pythons),
+           "PUPPETEER_CACHE_DIR": str(pup_dir), "CYPRESS_CACHE_FOLDER": str(cyp_dir)}
     monkeypatch.setattr(yourself, "command_inventory",
                         lambda names, versions, timeout: [{"name": "git", "version": "2.37.1", "status": "measured"}])
     facts = yourself.runtime_facts(environ=env, versions=True)
     assert facts["playwright"] == {"path": str(browsers), "builds": [
         {"name": "chromium", "revision": 1194}, {"name": "chromium_headless_shell", "revision": 1194},
         {"name": "ffmpeg", "revision": 1011}]}
+    assert facts["puppeteer"] == {"path": str(pup_dir), "builds": [{"name": "chrome", "revision": "123.0.0"}]}
+    assert facts["cypress"] == {"path": str(cyp_dir), "versions": ["13.6.0"]}
     assert facts["uv_pythons"] == [
         {"implementation": "cpython", "version": "3.10.20", "platform": "linux-x86_64-gnu"},
         {"implementation": "pypy", "version": "3.11.13", "platform": "linux-x86_64-gnu"}]
@@ -156,10 +162,20 @@ def test_runtime_facts_from_directories(tmp_path, monkeypatch):
     monkeypatch.setattr(yourself, "command_inventory",
                         lambda names, versions, timeout: [{"name": "git", "version": None, "status": "not_found"}])
     empty = yourself.runtime_facts(environ={"PLAYWRIGHT_BROWSERS_PATH": str(tmp_path / "none"),
+                                            "PUPPETEER_CACHE_DIR": str(tmp_path / "none"),
+                                            "CYPRESS_CACHE_FOLDER": str(tmp_path / "none"),
                                             "UV_PYTHON_INSTALL_DIR": str(tmp_path / "none")}, versions=True)
     assert empty["playwright"] == {"path": None, "builds": []} and empty["uv_pythons"] == []
+    assert empty["puppeteer"] == {"path": None, "builds": []} and empty["cypress"] == {"path": None, "versions": []}
     assert empty["git"]["merge_tree_write_tree"] is None
     assert yourself.runtime_facts(environ={})["git"] is None
+
+
+def test_edge_cli_presence(monkeypatch):
+    monkeypatch.setattr(yourself.shutil, "which", lambda name: "/usr/bin/" + name)
+    rows = yourself.command_inventory(["microsoft-edge", "msedge"])
+    assert len(rows) == 2
+    assert all(r["available"] for r in rows)
 
 
 @pytest.mark.parametrize("platform, env, tail", [
