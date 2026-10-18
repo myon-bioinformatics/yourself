@@ -75,6 +75,25 @@ def test_container_hints(fake_roots, monkeypatch):
         "in_container": True, "kinds": ["podman"], "virtualized": None}
 
 
+def test_wsl_detection(tmp_path):
+    proc = tmp_path / "proc"
+    kernel_dir = proc / "sys" / "kernel"
+    kernel_dir.mkdir(parents=True)
+    root = tmp_path / "root"
+    root.mkdir()
+
+    (kernel_dir / "osrelease").write_text("5.10.16.3-microsoft-standard-WSL2\n")
+    facts = yourself.container_facts(proc_root=proc, root=root)
+    assert facts["in_container"] is True
+    assert "wsl" in facts["kinds"]
+
+    (kernel_dir / "osrelease").unlink()
+    (proc / "version").write_text("Linux version 5.10.16.3-microsoft-standard-WSL2\n")
+    facts_v = yourself.container_facts(proc_root=proc, root=root)
+    assert facts_v["in_container"] is True
+    assert "wsl" in facts_v["kinds"]
+
+
 def test_no_argument_run_is_one_key_per_line(tmp_path):
     shutil.copy(ROOT / "yourself.py", tmp_path / "yourself.py")  # single file, no siblings
     proc = subprocess.run([sys.executable, "-S", str(tmp_path / "yourself.py")], cwd=tmp_path,

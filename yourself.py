@@ -143,11 +143,15 @@ _COMMANDS = {
     'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
     'wl-copy': None, 'pbcopy': None, 'sqlite3': None, 'psql': None,
     'kubectl': None, 'terraform': None, 'aws': None, 'gcloud': None,
+    'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
+    'mise': None, 'asdf': None, 'just': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
-            'BUILD.gn', 'WORKSPACE', '.goma')
+            'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
+            'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
+            'noxfile.py')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
@@ -418,6 +422,17 @@ def container_facts(*, proc_root="/proc", root="/"):
         kinds.append("docker")
     if (base / "run" / ".containerenv").exists():
         kinds.append("podman")
+    try:
+        osrelease = (proc / "sys" / "kernel" / "osrelease").read_text(encoding="ascii", errors="replace").lower()
+        if "wsl" in osrelease or "microsoft" in osrelease:
+            kinds.append("wsl")
+    except OSError:
+        try:
+            version = (proc / "version").read_text(encoding="ascii", errors="replace").lower()
+            if "wsl" in version or "microsoft" in version:
+                kinds.append("wsl")
+        except OSError:
+            pass
     try:
         cgroup = (proc / "1" / "cgroup").read_text(encoding="utf-8", errors="replace")
         for marker, kind in (("docker", "docker"), ("kubepods", "kubernetes"),
