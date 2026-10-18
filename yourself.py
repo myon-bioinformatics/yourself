@@ -143,11 +143,15 @@ _COMMANDS = {
     'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
     'wl-copy': None, 'pbcopy': None, 'sqlite3': None, 'psql': None,
     'kubectl': None, 'terraform': None, 'aws': None, 'gcloud': None,
+    'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
+    'mise': None, 'asdf': None, 'just': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
-            'BUILD.gn', 'WORKSPACE', '.goma')
+            'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
+            'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
+            'noxfile.py')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
@@ -435,7 +439,23 @@ def container_facts(*, proc_root="/proc", root="/"):
         virtualized = " hypervisor" in (proc / "cpuinfo").read_text(encoding="ascii", errors="replace")
     except OSError:
         virtualized = None
-    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized}
+    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized, "wsl": _wsl_kind(proc)}
+
+
+def _wsl_kind(proc):
+    """'wsl2' / 'wsl1' from the kernel release, else None. WSL is a VM or a
+    compatibility layer, not a container, so it never sets in_container."""
+    for path in (proc / "sys" / "kernel" / "osrelease", proc / "version"):
+        try:
+            text = path.read_text(encoding="ascii", errors="replace").lower()
+        except OSError:
+            continue
+        if "wsl2" in text or "microsoft-standard" in text:
+            return "wsl2"
+        if "microsoft" in text or "wsl" in text:
+            return "wsl1"
+        return None
+    return None
 
 
 # Fixed probes run by default (shell=False, bounded time and output). Their
@@ -1151,6 +1171,8 @@ def to_text(facts):
         if container["kinds"]:
             put("container_kinds", ", ".join(container["kinds"]))
         put("virtualized", container["virtualized"])
+        if container.get("wsl"):
+            put("wsl", container["wsl"])
     network = facts.get("network")
     if network is not None:
         put("hostname", network["hostname"])
