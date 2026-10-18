@@ -423,17 +423,6 @@ def container_facts(*, proc_root="/proc", root="/"):
     if (base / "run" / ".containerenv").exists():
         kinds.append("podman")
     try:
-        osrelease = (proc / "sys" / "kernel" / "osrelease").read_text(encoding="ascii", errors="replace").lower()
-        if "wsl" in osrelease or "microsoft" in osrelease:
-            kinds.append("wsl")
-    except OSError:
-        try:
-            version = (proc / "version").read_text(encoding="ascii", errors="replace").lower()
-            if "wsl" in version or "microsoft" in version:
-                kinds.append("wsl")
-        except OSError:
-            pass
-    try:
         cgroup = (proc / "1" / "cgroup").read_text(encoding="utf-8", errors="replace")
         for marker, kind in (("docker", "docker"), ("kubepods", "kubernetes"),
                              ("containerd", "containerd"), ("lxc", "lxc")):
@@ -450,7 +439,23 @@ def container_facts(*, proc_root="/proc", root="/"):
         virtualized = " hypervisor" in (proc / "cpuinfo").read_text(encoding="ascii", errors="replace")
     except OSError:
         virtualized = None
-    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized}
+    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized, "wsl": _wsl_kind(proc)}
+
+
+def _wsl_kind(proc):
+    """'wsl2' / 'wsl1' from the kernel release, else None. WSL is a VM or a
+    compatibility layer, not a container, so it never sets in_container."""
+    for path in (proc / "sys" / "kernel" / "osrelease", proc / "version"):
+        try:
+            text = path.read_text(encoding="ascii", errors="replace").lower()
+        except OSError:
+            continue
+        if "wsl2" in text or "microsoft-standard" in text:
+            return "wsl2"
+        if "microsoft" in text or "wsl" in text:
+            return "wsl1"
+        return None
+    return None
 
 
 # Fixed probes run by default (shell=False, bounded time and output). Their
@@ -1159,6 +1164,8 @@ def to_text(facts):
         if container["kinds"]:
             put("container_kinds", ", ".join(container["kinds"]))
         put("virtualized", container["virtualized"])
+        if container.get("wsl"):
+            put("wsl", container["wsl"])
     network = facts.get("network")
     if network is not None:
         put("hostname", network["hostname"])
