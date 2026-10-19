@@ -118,6 +118,7 @@ def test_workspace_marker_presence_not_contents(monkeypatch, tmp_path):
 
 
 def test_workspace_errors_and_symlink_marker(monkeypatch, tmp_path):
+    (tmp_path / 'Dockerfile').touch()
     original = Path.lstat
     def lstat(path, *args, **kwargs):
         if path.name == 'Dockerfile':
@@ -209,3 +210,82 @@ def test_extended_api_standalone_vendor(tmp_path):
         cwd=tmp_path, capture_output=True, text=True, timeout=20)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == ''
+
+
+@pytest.mark.parametrize('spelling', ['justfile', 'Justfile'])
+def test_justfile_alias_has_canonical_name(tmp_path, spelling):
+    (tmp_path / spelling).touch()
+    assert yourself.workspace_facts(tmp_path)['markers'] == ['justfile']
+
+
+def test_case_variants_are_one_logical_marker(monkeypatch, tmp_path):
+    # Simulate both actual directory entries even on case-insensitive hosts.
+    monkeypatch.setattr(Path, 'iterdir', lambda root: iter([root / 'justfile', root / 'Justfile']))
+    original = Path.lstat
+    monkeypatch.setattr(Path, 'lstat', lambda path: SimpleNamespace(st_mode=0o100644)
+                        if path.name in ('justfile', 'Justfile') else original(path))
+    assert yourself.workspace_facts(tmp_path)['markers'] == ['justfile']
+
+
+@pytest.mark.parametrize('system', ['Windows', 'Darwin', 'Linux'])
+@pytest.mark.parametrize('spelling,expected', [('pixi.toml', ['pixi.toml']), ('Pixi.toml', []),
+                                             ('JUSTFILE', []), ('Justfile', ['justfile'])])
+def test_marker_spelling_independent_of_os(monkeypatch, tmp_path, system, spelling, expected):
+    monkeypatch.setattr(yourself.platform, 'system', lambda: system)
+    (tmp_path / spelling).touch()
+    original = Path.lstat
+    # Emulate case-insensitive lstat: even unregistered casing would resolve.
+    monkeypatch.setattr(Path, 'lstat', lambda path: SimpleNamespace(st_mode=0o100644)
+                        if path.name.casefold() == spelling.casefold() else original(path))
+    assert yourself.workspace_facts(tmp_path)['markers'] == expected
+
+
+def test_distinct_hardlinked_markers_are_preserved(tmp_path):
+    first = tmp_path / 'pyproject.toml'
+    first.touch()
+    (tmp_path / 'requirements.txt').hardlink_to(first)
+    assert yourself.workspace_facts(tmp_path)['markers'] == ['pyproject.toml', 'requirements.txt']
+
+
+def test_all_added_presence_tools_never_execute(monkeypatch):
+    names = ('poetry pdm pixi task brew bash zsh fish git-lfs mvn gradle ruby bundle mix nix rye '
+             'conda winget apt dnf yum pacman scoop choco gem swift bazel meson mypy grep sed awk '
+             'find fd ag ack tree fzf pipenv mamba virtualenv black corepack javac php composer '
+             'elixir gzip bzip2 xz zstd 7z patch diff rsync docker-compose podman-compose yq').split()
+    monkeypatch.setattr(yourself.shutil, 'which', lambda name: '/trusted/' + name)
+    def forbidden(*args, **kwargs):
+        pytest.fail('presence-only command ran')
+    monkeypatch.setattr(yourself.subprocess, 'run', forbidden)
+    assert all(row['status'] == 'presence_only' for row in yourself.command_inventory(names, versions=True))
+
+
+def test_ruff_fixed_opt_in_version(monkeypatch):
+    monkeypatch.setattr(yourself.shutil, 'which', lambda name: '/trusted/ruff')
+    def run(argv, **kwargs):
+        assert argv == ['/trusted/ruff', '--version']
+        assert kwargs['shell'] is False
+        return SimpleNamespace(stdout=b'ruff 0.8.0\n', stderr=b'', returncode=0)
+    monkeypatch.setattr(yourself.subprocess, 'run', run)
+    assert yourself.command_inventory(['ruff'], versions=True) == [
+        {'name': 'ruff', 'available': True, 'version': '0.8.0', 'status': 'measured'}]
+
+
+def test_workspace_listing_error_is_not_absence(monkeypatch, tmp_path):
+    def fail(root):
+        raise PermissionError
+    monkeypatch.setattr(Path, 'iterdir', fail)
+    assert yourself.workspace_facts(tmp_path)['errors'] == [
+        {'marker': 'workspace', 'reason': 'PermissionError'}]
+
+
+def test_all_new_workspace_markers(tmp_path):
+    names = ('justfile Taskfile.yml Taskfile.yaml flake.nix pixi.toml Brewfile .python-version '
+             '.node-version .tool-versions .mise.toml poetry.lock pdm.lock uv.lock Pipfile '
+             'pom.xml build.gradle build.gradle.kts Gemfile mix.exs default.nix bun.lockb '
+             'bunfig.toml Rakefile build.sbt .pre-commit-config.yaml mise.toml ruff.toml .ruff.toml').split()
+    for name in names:
+        (tmp_path / name).touch()
+    (tmp_path / '.venv').mkdir()
+    report = yourself.workspace_facts(tmp_path)
+    assert set(report['markers']) == set(names) | {'.venv'}
+    assert len(report['markers']) == len(names) + 1

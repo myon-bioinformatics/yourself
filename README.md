@@ -228,11 +228,42 @@ The main is only an entry/formatting layer: default calls existing
 --minimal calls `collect()`. No new main-specific diagnostic engine or
 project recommendation function is introduced.
 
-The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
-jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
-even with --versions. Presence is not authentication/build/service readiness.
---versions remains explicit opt-in to the existing fixed allowlist.
+The fixed inventory combines presence-only tools for package managers, shells,
+search/archive tools, languages, build tools and services (including poetry,
+pdm, pixi, rye, swift, meson, winget, brew, grep, zstd and git-lfs).
+Presence-only entries never execute, even with `--versions`; presence does not
+prove authentication, build or service readiness. `ruff` supports the fixed,
+explicit opt-in `--version` probe alongside the existing version allowlist.
+Workspace detection uses one marker registry across the Python APIs and CLI.
+It lists only the root's entry names and lstat-checks recognized entries, without
+reading contents or following symlinks. `justfile` and `Justfile` are explicit
+aliases reported once as `justfile`, even when both exist on Linux. `pixi.toml`
+uses its exact official spelling; `Pixi.toml` is ignored on every OS. Other
+markers also use exact registered spellings, independently of filesystem casing.
+Distinct marker names remain distinct even if hardlinked. `.goma` and `.venv`
+may be directories; other markers must be regular files. Listing/stat failures
+are reported as errors. Session facts include the virtualenv basename, and
+PATH Python discovery covers `python3.8` through `python3.15` without execution.
 No test/build/browser execution, installs, repairs, environment dump or
 project-content reading. Workspace markers and disk facts use existing APIs.
 Import stays inert, APIs remain reusable, and existing scope/caveats apply.
 Exit 2 marks invalid/partial observations; output goes to stdout only.
+
+## Runtime and development Python policy
+
+The standard-library runtime supports Python 3.10+; this change preserves the
+existing runtime floor. The separate `runtime-compatibility` CI lane executes
+behavior tests with `python -S`, without installing pytest or any third-party
+package. Development/test environments use Python 3.11+ and a committed uv lock:
+
+```sh
+uv sync --locked --python 3.11
+uv run --locked python -m pytest
+python -S -m unittest discover -s tests -p test_yourself.py -v
+```
+
+`pyproject.toml` is the canonical development dependency definition; legacy
+requirements files remain for downstream callers. Runtime metadata does not
+raise the source/vendoring floor to the development floor. CI pins setup-python
+v7.0.0 and setup-uv v10.3.0 by full commit SHA, and uses uv 0.13.1. Setup actions
+using Node 24 require runner 2.327.1 or newer (GitHub-hosted runners are used).

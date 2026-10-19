@@ -126,32 +126,40 @@ def to_markdown(facts):
 _COMMANDS = {
     'python': ('--version',), 'git': ('--version',), 'docker': ('--version',),
     'node': ('--version',), 'cmake': ('--version',), 'ninja': ('--version',),
-    'gcc': ('--version',), 'g++': ('--version',), 'clang': ('--version',),
-    'rg': ('--version',),
-    # Some CLIs (Flutter/Dart/npm/goma) can bootstrap/update or initialize state.
-    # Discover their presence, but do not run them as an environment probe.
-    'flutter': None, 'dart': None, 'npm': None, 'pytest': None,
-    'goma': None, 'gomacc': None,
-    'gh': None, 'uv': None, 'pip': None, 'pipx': None,
-    'npx': None, 'pnpm': None, 'yarn': None, 'playwright': None,
-    'actionlint': None, 'jq': None, 'curl': None,
-    'ffmpeg': None, 'magick': None, 'tsc': None,
-    # Presence only: what this machine can do (GPU, languages, browsers,
-    # clipboard, cloud/database CLIs). Never executed by this module.
-    'nvidia-smi': None, 'make': None, 'java': None, 'go': None, 'rustc': None,
-    'cargo': None, 'deno': None, 'bun': None, 'chromium': None,
-    'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
-    'wl-copy': None, 'pbcopy': None, 'sqlite3': None, 'psql': None,
-    'kubectl': None, 'terraform': None, 'aws': None, 'gcloud': None,
-    'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
-    'mise': None, 'asdf': None, 'just': None,
-    'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
+    'gcc': ('--version',), 'g++': ('--version',), 'clang': ('--version',), 'rg': ('--version',),
+    'flutter': None, 'dart': None, 'npm': None, 'pytest': None, 'goma': None, 'gomacc': None,
+    'gh': None, 'uv': None, 'pip': None, 'pipx': None, 'npx': None, 'pnpm': None, 'yarn': None,
+    'playwright': None, 'actionlint': None, 'jq': None, 'curl': None, 'ffmpeg': None,
+    'magick': None, 'tsc': None, 'nvidia-smi': None, 'make': None, 'java': None, 'go': None,
+    'rustc': None, 'cargo': None, 'deno': None, 'bun': None, 'chromium': None,
+    'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None, 'wl-copy': None,
+    'pbcopy': None, 'sqlite3': None, 'psql': None, 'kubectl': None, 'terraform': None,
+    'aws': None, 'gcloud': None, 'podman': None, 'nerdctl': None, 'helm': None, 'kind': None,
+    'minikube': None, 'mise': None, 'asdf': None, 'just': None, 'ssh': None, 'wget': None,
+    'zip': None, 'unzip': None, 'tar': None, 'ruff': ('--version',), 'poetry': None,
+    'pdm': None, 'pixi': None, 'task': None, 'brew': None, 'bash': None, 'zsh': None,
+    'fish': None, 'git-lfs': None, 'mvn': None, 'gradle': None, 'ruby': None, 'bundle': None,
+    'mix': None, 'nix': None, 'rye': None, 'conda': None, 'winget': None, 'apt': None,
+    'dnf': None, 'yum': None, 'pacman': None, 'scoop': None, 'choco': None, 'gem': None,
+    'swift': None, 'bazel': None, 'meson': None, 'mypy': None, 'grep': None, 'sed': None,
+    'awk': None, 'find': None, 'fd': None, 'ag': None, 'ack': None, 'tree': None, 'fzf': None,
+    'pipenv': None, 'mamba': None, 'virtualenv': None, 'black': None, 'corepack': None,
+    'javac': None, 'php': None, 'composer': None, 'elixir': None, 'gzip': None, 'bzip2': None,
+    'xz': None, 'zstd': None, '7z': None, 'patch': None, 'diff': None, 'rsync': None,
+    'docker-compose': None, 'podman-compose': None, 'yq': None,
 }
-_MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
-            'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
-            'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
-            'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
-            'noxfile.py')
+_MARKERS = (
+    'pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml', 'Dockerfile',
+    'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt', 'BUILD.gn', 'WORKSPACE', '.goma',
+    'Makefile', 'Cargo.toml', 'go.mod', 'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json',
+    'tox.ini', 'noxfile.py', 'justfile', 'Taskfile.yml', 'flake.nix', 'pixi.toml', 'Brewfile',
+    '.python-version', '.node-version', '.tool-versions', '.mise.toml', 'poetry.lock',
+    'pdm.lock', 'uv.lock', 'Pipfile', '.venv', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+    'Gemfile', 'mix.exs', 'default.nix', 'Taskfile.yaml', 'bun.lockb', 'bunfig.toml',
+    'Rakefile', 'build.sbt', '.pre-commit-config.yaml', 'mise.toml', 'ruff.toml', '.ruff.toml',
+)
+_MARKER_ALIASES = {'justfile': ('justfile', 'Justfile')}
+_DIRECTORY_MARKERS = frozenset(('.goma', '.venv'))
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
@@ -207,20 +215,31 @@ def workspace_facts(path):
 
     No Git identity, dependency parsing or recursive inventory. Marker files are
     lstat-ed only; symlinks do not count as files. Disk facts are byte counts.
+    Match actual directory-entry spellings on every filesystem. Only registered
+    aliases are accepted; justfile/Justfile yield one canonical 'justfile'.
     """
     root = Path(path)
     if not stat.S_ISDIR(root.lstat().st_mode):
         raise ValueError('workspace must be a directory, not a symlink')
     markers, errors = [], []
+    try:
+        entries = {entry.name for entry in root.iterdir()}
+    except OSError as error:
+        entries = set()
+        errors.append({'marker': 'workspace', 'reason': type(error).__name__})
     for name in _MARKERS:
-        try:
-            mode = (root / name).lstat().st_mode
-            if stat.S_ISREG(mode) or (name == '.goma' and stat.S_ISDIR(mode)):
-                markers.append(name)
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            errors.append({'marker': name, 'reason': type(error).__name__})
+        for spelling in _MARKER_ALIASES.get(name, (name,)):
+            if spelling not in entries:
+                continue
+            try:
+                mode = (root / spelling).lstat().st_mode
+                if stat.S_ISREG(mode) or (name in _DIRECTORY_MARKERS and stat.S_ISDIR(mode)):
+                    markers.append(name)
+                    break
+            except FileNotFoundError:
+                continue  # Entry disappeared after listing.
+            except OSError as error:
+                errors.append({'marker': spelling, 'reason': type(error).__name__})
     try:
         disk = shutil.disk_usage(root)
         storage = {'total_bytes': disk.total, 'used_bytes': disk.used,
@@ -612,13 +631,15 @@ def session_facts():
         except OSError:
             zone = None
     flags = lambda names: {name: bool(os.environ.get(name)) for name in names}
+    is_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     return {"user": user, "uid": uid, "root": uid == 0 if uid is not None else None,
             "home": str(Path.home()) if os.environ.get("HOME") else None,
             "shell": Path(os.environ.get("SHELL", "")).name or None,
             "lang": os.environ.get("LC_ALL") or os.environ.get("LANG"),
             "timezone": zone, "local_time": datetime.now().astimezone().isoformat(timespec="seconds"),
             "display": flags(("DISPLAY", "WAYLAND_DISPLAY")),
-            "python_executable": sys.executable, "virtualenv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+            "python_executable": sys.executable, "virtualenv": is_venv,
+            "virtualenv_name": Path(sys.prefix).name if is_venv else None,
             "ca_env": flags(("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE")),
             "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK)}
 
@@ -1099,7 +1120,7 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
       ``chromium`` (full) and ``chromium_headless_shell`` with revisions, so a job
       can tell whether ``--only-shell`` / ``--no-shell`` matches what is present;
     * uv-managed interpreters (``UV_PYTHON_INSTALL_DIR`` or uv's default);
-    * ``python3.X`` executables on PATH (3.8-3.14);
+    * ``python3.X`` executables on PATH (3.8-3.15);
     * with ``versions``: git's version and whether it has
       ``git merge-tree --write-tree`` (2.38+).
     """
@@ -1126,7 +1147,7 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
             if match:
                 facts["uv_pythons"].append({"implementation": match.group(1), "version": match.group(2),
                                             "platform": match.group(3)})
-    facts["path_pythons"] = ["3.%d" % minor for minor in range(8, 15) if shutil.which("python3.%d" % minor)]
+    facts["path_pythons"] = ["3.%d" % minor for minor in range(8, 16) if shutil.which("python3.%d" % minor)]
     if versions:
         row = command_inventory(["git"], versions=True, timeout=timeout)[0]
         parts = tuple(int(x) for x in (row["version"] or "0").split(".")[:2])
@@ -1154,7 +1175,8 @@ def to_text(facts):
         put("local_time", session["local_time"])
         put("display", any(session["display"].values()) or "false (headless)")
         put("python_executable", session["python_executable"])
-        put("virtualenv", session["virtualenv"])
+        venv_str = ("true (%s)" % session["virtualenv_name"]) if session.get("virtualenv_name") else str(session["virtualenv"]).lower()
+        put("virtualenv", venv_str)
         for name, value in session["ca_env"].items():
             put("ca_env." + name, value)
         put("ci", " ".join("%s=%s" % (k, str(v).lower()) for k, v in session["ci"].items()))
