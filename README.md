@@ -229,8 +229,7 @@ The main is only an entry/formatting layer: default calls existing
 project recommendation function is introduced.
 
 The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
-jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
-even with --versions. Presence is not authentication/build/service readiness.
+jq/curl/ffmpeg/magick/tsc/poetry/pdm/pixi/task/brew/bash/zsh/fish/git-lfs as presence-only entries, and ruff for opt-in version checks. New presence entries never execute even with --versions. Presence is not authentication/build/service readiness.
 --versions remains explicit opt-in to the existing fixed allowlist.
 No test/build/browser execution, installs, repairs, environment dump or
 project-content reading. Workspace markers and disk facts use existing APIs.

@@ -127,7 +127,7 @@ _COMMANDS = {
     'python': ('--version',), 'git': ('--version',), 'docker': ('--version',),
     'node': ('--version',), 'cmake': ('--version',), 'ninja': ('--version',),
     'gcc': ('--version',), 'g++': ('--version',), 'clang': ('--version',),
-    'rg': ('--version',),
+    'rg': ('--version',), 'ruff': ('--version',),
     # Some CLIs (Flutter/Dart/npm/goma) can bootstrap/update or initialize state.
     # Discover their presence, but do not run them as an environment probe.
     'flutter': None, 'dart': None, 'npm': None, 'pytest': None,
@@ -136,6 +136,8 @@ _COMMANDS = {
     'npx': None, 'pnpm': None, 'yarn': None, 'playwright': None,
     'actionlint': None, 'jq': None, 'curl': None,
     'ffmpeg': None, 'magick': None, 'tsc': None,
+    'poetry': None, 'pdm': None, 'pixi': None, 'task': None, 'brew': None,
+    'bash': None, 'zsh': None, 'fish': None, 'git-lfs': None,
     # Presence only: what this machine can do (GPU, languages, browsers,
     # clipboard, cloud/database CLIs). Never executed by this module.
     'nvidia-smi': None, 'make': None, 'java': None, 'go': None, 'rustc': None,
@@ -151,7 +153,10 @@ _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml'
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
             'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
             'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
-            'noxfile.py')
+            'noxfile.py', 'justfile', 'Justfile', 'Taskfile.yml', 'flake.nix',
+            'pixi.toml', 'Brewfile', '.python-version', '.node-version',
+            '.tool-versions', '.mise.toml', 'poetry.lock', 'pdm.lock', 'uv.lock',
+            'Pipfile', '.venv')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
@@ -215,7 +220,7 @@ def workspace_facts(path):
     for name in _MARKERS:
         try:
             mode = (root / name).lstat().st_mode
-            if stat.S_ISREG(mode) or (name == '.goma' and stat.S_ISDIR(mode)):
+            if stat.S_ISREG(mode) or (name in ('.goma', '.venv') and stat.S_ISDIR(mode)):
                 markers.append(name)
         except FileNotFoundError:
             continue
@@ -612,13 +617,15 @@ def session_facts():
         except OSError:
             zone = None
     flags = lambda names: {name: bool(os.environ.get(name)) for name in names}
+    is_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     return {"user": user, "uid": uid, "root": uid == 0 if uid is not None else None,
             "home": str(Path.home()) if os.environ.get("HOME") else None,
             "shell": Path(os.environ.get("SHELL", "")).name or None,
             "lang": os.environ.get("LC_ALL") or os.environ.get("LANG"),
             "timezone": zone, "local_time": datetime.now().astimezone().isoformat(timespec="seconds"),
             "display": flags(("DISPLAY", "WAYLAND_DISPLAY")),
-            "python_executable": sys.executable, "virtualenv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+            "python_executable": sys.executable, "virtualenv": is_venv,
+            "virtualenv_name": Path(sys.prefix).name if is_venv else None,
             "ca_env": flags(("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE")),
             "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK)}
 
@@ -1154,7 +1161,8 @@ def to_text(facts):
         put("local_time", session["local_time"])
         put("display", any(session["display"].values()) or "false (headless)")
         put("python_executable", session["python_executable"])
-        put("virtualenv", session["virtualenv"])
+        venv_str = ("true (%s)" % session["virtualenv_name"]) if session.get("virtualenv_name") else str(session["virtualenv"]).lower()
+        put("virtualenv", venv_str)
         for name, value in session["ca_env"].items():
             put("ca_env." + name, value)
         put("ci", " ".join("%s=%s" % (k, str(v).lower()) for k, v in session["ci"].items()))

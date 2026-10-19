@@ -80,8 +80,38 @@ def test_new_workspace_markers(tmp_path):
     (tmp_path / 'Cargo.toml').touch()
     (tmp_path / 'go.mod').touch()
     (tmp_path / 'tsconfig.json').touch()
+    (tmp_path / 'justfile').touch()
+    (tmp_path / 'Taskfile.yml').touch()
+    (tmp_path / 'flake.nix').touch()
+    (tmp_path / 'pixi.toml').touch()
+    (tmp_path / 'Brewfile').touch()
+    (tmp_path / '.python-version').touch()
+    (tmp_path / '.node-version').touch()
+    (tmp_path / '.tool-versions').touch()
+    (tmp_path / '.mise.toml').touch()
+    (tmp_path / 'poetry.lock').touch()
+    (tmp_path / 'pdm.lock').touch()
+    (tmp_path / 'uv.lock').touch()
+    (tmp_path / 'Pipfile').touch()
+    (tmp_path / '.venv').mkdir()
     report = yourself.workspace_facts(tmp_path)
-    assert report['markers'] == ['Makefile', 'Cargo.toml', 'go.mod', 'tsconfig.json']
+    assert report['markers'] == [
+        'Makefile', 'Cargo.toml', 'go.mod', 'tsconfig.json',
+        'justfile', 'Taskfile.yml', 'flake.nix', 'pixi.toml', 'Brewfile',
+        '.python-version', '.node-version', '.tool-versions', '.mise.toml',
+        'poetry.lock', 'pdm.lock', 'uv.lock', 'Pipfile', '.venv'
+    ]
+
+
+def test_ruff_version_measurement(monkeypatch):
+    monkeypatch.setattr(yourself.shutil, 'which', lambda name: '/trusted/ruff')
+    def run(argv, **kwargs):
+        assert argv == ['/trusted/ruff', '--version']
+        return SimpleNamespace(stdout=b'ruff 0.8.0\n', stderr=b'', returncode=0)
+    monkeypatch.setattr(yourself.subprocess, 'run', run)
+    assert yourself.command_inventory(['ruff'], versions=True) == [
+        {'name': 'ruff', 'available': True, 'version': '0.8.0', 'status': 'measured'}
+    ]
 
 
 @pytest.mark.parametrize('timeout', [0, -1, True, '2', float('nan'), float('inf'), 31])

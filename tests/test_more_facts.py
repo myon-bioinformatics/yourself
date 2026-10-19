@@ -87,6 +87,25 @@ def test_session_facts_flags_only_for_secrets(monkeypatch):
     assert "display: false (headless)\n" in yourself.to_text(facts)
 
 
+def test_session_facts_virtualenv_details(monkeypatch):
+    monkeypatch.setattr(yourself.sys, "prefix", "/env/myenv")
+    monkeypatch.setattr(yourself.sys, "base_prefix", "/base/python")
+    s = yourself.session_facts()
+    assert s["virtualenv"] is True
+    assert s["virtualenv_name"] == "myenv"
+    facts = yourself.collect()
+    facts["session"] = s
+    assert "virtualenv: true (myenv)\n" in yourself.to_text(facts)
+
+    monkeypatch.setattr(yourself.sys, "prefix", "/base/python")
+    s2 = yourself.session_facts()
+    assert s2["virtualenv"] is False
+    assert s2["virtualenv_name"] is None
+    facts2 = yourself.collect()
+    facts2["session"] = s2
+    assert "virtualenv: false\n" in yourself.to_text(facts2)
+
+
 def test_unsupported_platform_keeps_the_bindings_shape(monkeypatch):
     # macOS / Windows: same keys as Linux, measured=False, so the CLI output shape is stable.
     monkeypatch.setattr(yourself.platform, "system", lambda: "Darwin")
