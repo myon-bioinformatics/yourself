@@ -148,6 +148,8 @@ _COMMANDS = {
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
     'mvn': None, 'gradle': None, 'ruby': None, 'bundle': None, 'mix': None,
     'nix': None, 'rye': None, 'pixi': None, 'conda': None, 'task': None,
+    'brew': None, 'winget': None, 'apt': None, 'dnf': None, 'yum': None,
+    'pacman': None, 'scoop': None, 'choco': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',

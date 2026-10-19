@@ -71,7 +71,11 @@ def test_presence_only_and_missing_never_run(monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail('presence-only command ran')
     monkeypatch.setattr(yourself.subprocess, 'run', forbidden)
-    names = ['flutter', 'goma', 'podman', 'mise', 'just', 'mvn', 'gradle', 'ruby', 'bundle', 'mix', 'nix', 'rye', 'pixi', 'conda', 'task', 'rg']
+    names = [
+        'flutter', 'goma', 'podman', 'mise', 'just', 'mvn', 'gradle', 'ruby', 'bundle',
+        'mix', 'nix', 'rye', 'pixi', 'conda', 'task', 'brew', 'winget', 'apt', 'dnf',
+        'yum', 'pacman', 'scoop', 'choco', 'rg'
+    ]
     rows = yourself.command_inventory(names, versions=True)
     statuses = {t['name']: t['status'] for t in rows}
     assert statuses['rg'] == 'not_found'
