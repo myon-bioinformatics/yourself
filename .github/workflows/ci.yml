@@ -105,11 +105,7 @@ jobs:
         shell: bash
         run: |
           uv sync --locked --python "$(python -c 'import sys; print(sys.executable)')"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$PWD/.venv/Scripts" >> "$GITHUB_PATH"
-          else
-            echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-          fi
+          python -c "import os; from pathlib import Path; print(Path('.venv').resolve() / ('Scripts' if os.name == 'nt' else 'bin'))" >> "$GITHUB_PATH"
       - name: Fetch pinned shared vendor tool
         uses: actions/checkout@v7
         with:
