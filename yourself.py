@@ -225,11 +225,17 @@ def workspace_facts(path):
     if not stat.S_ISDIR(root.lstat().st_mode):
         raise ValueError('workspace must be a directory, not a symlink')
     markers, errors = [], []
+    seen_files = set()
     for name in _MARKERS:
         try:
-            mode = (root / name).lstat().st_mode
+            target = root / name
+            st = target.lstat()
+            mode = st.st_mode
             if stat.S_ISREG(mode) or (name == '.goma' and stat.S_ISDIR(mode)):
-                markers.append(name)
+                file_key = (st.st_dev, st.st_ino) if st.st_ino != 0 else str(target.resolve())
+                if file_key not in seen_files:
+                    seen_files.add(file_key)
+                    markers.append(name)
         except FileNotFoundError:
             continue
         except OSError as error:
