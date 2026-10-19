@@ -71,8 +71,13 @@ def test_presence_only_and_missing_never_run(monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail('presence-only command ran')
     monkeypatch.setattr(yourself.subprocess, 'run', forbidden)
-    rows = yourself.command_inventory(['flutter', 'goma', 'podman', 'mise', 'just', 'rg'], versions=True)
-    assert [t['status'] for t in rows] == ['presence_only', 'presence_only', 'presence_only', 'presence_only', 'presence_only', 'not_found']
+    names = ['flutter', 'goma', 'podman', 'mise', 'just', 'mvn', 'gradle', 'ruby', 'bundle', 'mix', 'nix', 'rye', 'pixi', 'conda', 'task', 'rg']
+    rows = yourself.command_inventory(names, versions=True)
+    statuses = {t['name']: t['status'] for t in rows}
+    assert statuses['rg'] == 'not_found'
+    for name in names:
+        if name != 'rg':
+            assert statuses[name] == 'presence_only'
 
 
 def test_new_workspace_markers(tmp_path):
@@ -80,8 +85,16 @@ def test_new_workspace_markers(tmp_path):
     (tmp_path / 'Cargo.toml').touch()
     (tmp_path / 'go.mod').touch()
     (tmp_path / 'tsconfig.json').touch()
+    (tmp_path / 'pom.xml').touch()
+    (tmp_path / 'build.gradle').touch()
+    (tmp_path / 'Gemfile').touch()
+    (tmp_path / 'flake.nix').touch()
+    (tmp_path / 'Pipfile').touch()
     report = yourself.workspace_facts(tmp_path)
-    assert report['markers'] == ['Makefile', 'Cargo.toml', 'go.mod', 'tsconfig.json']
+    assert set(report['markers']) == {
+        'Makefile', 'Cargo.toml', 'go.mod', 'tsconfig.json',
+        'pom.xml', 'build.gradle', 'Gemfile', 'flake.nix', 'Pipfile',
+    }
 
 
 @pytest.mark.parametrize('timeout', [0, -1, True, '2', float('nan'), float('inf'), 31])

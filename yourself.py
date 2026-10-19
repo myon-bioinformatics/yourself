@@ -146,12 +146,16 @@ _COMMANDS = {
     'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
     'mise': None, 'asdf': None, 'just': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
+    'mvn': None, 'gradle': None, 'ruby': None, 'bundle': None, 'mix': None,
+    'nix': None, 'rye': None, 'pixi': None, 'conda': None, 'task': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
             'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
             'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
-            'noxfile.py')
+            'noxfile.py', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'Gemfile',
+            'mix.exs', 'flake.nix', 'default.nix', 'Taskfile.yml', 'Taskfile.yaml',
+            'Pipfile', 'Brewfile')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
