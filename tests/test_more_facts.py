@@ -1,4 +1,5 @@
 """Resources (cgroup v1/v2), session facts and listener bind addresses."""
+from pathlib import Path
 import pytest
 import yourself
 
@@ -95,3 +96,18 @@ def test_unsupported_platform_keeps_the_bindings_shape(monkeypatch):
     facts = yourself.collect()
     facts["listeners"] = out
     assert "listening: unmeasured (unsupported_platform)\n" in yourself.to_text(facts)  # not "(none)"
+
+
+def test_session_facts_virtualenv_name(monkeypatch):
+    monkeypatch.setattr(yourself.sys, 'prefix', str(Path('env') / 'myenv'))
+    monkeypatch.setattr(yourself.sys, 'base_prefix', 'base-python')
+    session = yourself.session_facts()
+    assert session['virtualenv'] is True and session['virtualenv_name'] == 'myenv'
+    facts = yourself.collect()
+    facts['session'] = session
+    assert 'virtualenv: true (myenv)\n' in yourself.to_text(facts)
+    monkeypatch.setattr(yourself.sys, 'prefix', 'base-python')
+    session = yourself.session_facts()
+    assert session['virtualenv'] is False and session['virtualenv_name'] is None
+    facts['session'] = session
+    assert 'virtualenv: false\n' in yourself.to_text(facts)
