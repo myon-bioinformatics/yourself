@@ -236,3 +236,22 @@ No test/build/browser execution, installs, repairs, environment dump or
 project-content reading. Workspace markers and disk facts use existing APIs.
 Import stays inert, APIs remain reusable, and existing scope/caveats apply.
 Exit 2 marks invalid/partial observations; output goes to stdout only.
+
+## Runtime and development Python policy
+
+The standard-library runtime supports Python 3.10+; this change preserves the
+existing runtime floor. The separate `runtime-compatibility` CI lane executes
+behavior tests with `python -S`, without installing pytest or any third-party
+package. Development/test environments use Python 3.11+ and a committed uv lock:
+
+```sh
+uv sync --locked --python 3.11
+uv run --locked python -m pytest
+python -S -m unittest discover -s tests -p test_yourself.py -v
+```
+
+`pyproject.toml` is the canonical development dependency definition; legacy
+requirements files remain for downstream callers. Runtime metadata does not
+raise the source/vendoring floor to the development floor. CI pins setup-python
+v7.0.0 and setup-uv v10.3.0 by full commit SHA, and uses uv 0.13.1. Setup actions
+using Node 24 require runner 2.327.1 or newer (GitHub-hosted runners are used).
