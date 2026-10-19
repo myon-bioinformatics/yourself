@@ -218,6 +218,8 @@ def workspace_facts(path):
         raise ValueError('workspace must be a directory, not a symlink')
     markers, errors = [], []
     for name in _MARKERS:
+        if any(m.lower() == name.lower() for m in markers):
+            continue
         try:
             mode = (root / name).lstat().st_mode
             if stat.S_ISREG(mode) or (name in ('.goma', '.venv') and stat.S_ISDIR(mode)):
