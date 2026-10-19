@@ -137,7 +137,7 @@ _COMMANDS = {
     'actionlint': None, 'jq': None, 'curl': None,
     'ffmpeg': None, 'magick': None, 'tsc': None,
     # Presence only: what this machine can do (GPU, languages, browsers,
-    # clipboard, cloud/database CLIs). Never executed by this module.
+    # clipboard, cloud/database CLIs, search/build/package tools). Never executed by this module.
     'nvidia-smi': None, 'make': None, 'java': None, 'go': None, 'rustc': None,
     'cargo': None, 'deno': None, 'bun': None, 'chromium': None,
     'google-chrome': None, 'firefox': None, 'xclip': None, 'xsel': None,
@@ -146,12 +146,25 @@ _COMMANDS = {
     'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
     'mise': None, 'asdf': None, 'just': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
+    'grep': None, 'sed': None, 'awk': None, 'find': None, 'fd': None, 'ag': None,
+    'ack': None, 'tree': None, 'fzf': None,
+    'poetry': None, 'pdm': None, 'pipenv': None, 'conda': None, 'mamba': None,
+    'virtualenv': None, 'ruff': None, 'black': None, 'mypy': None, 'corepack': None,
+    'ruby': None, 'gem': None, 'bundle': None, 'javac': None, 'mvn': None,
+    'gradle': None, 'php': None, 'composer': None, 'elixir': None, 'mix': None,
+    'gzip': None, 'bzip2': None, 'xz': None, 'zstd': None, '7z': None,
+    'patch': None, 'diff': None, 'rsync': None,
+    'docker-compose': None, 'podman-compose': None, 'nix': None, 'bazel': None,
+    'git-lfs': None, 'yq': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
             'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
             'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
-            'noxfile.py')
+            'noxfile.py', 'Gemfile', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+            'mix.exs', 'flake.nix', 'default.nix', 'mise.toml', '.tool-versions',
+            'Justfile', 'justfile', 'pixi.toml', 'Pixi.toml', 'ruff.toml',
+            '.ruff.toml')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):

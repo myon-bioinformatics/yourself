@@ -228,9 +228,13 @@ The main is only an entry/formatting layer: default calls existing
 --minimal calls `collect()`. No new main-specific diagnostic engine or
 project recommendation function is introduced.
 
-The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
-jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
-even with --versions. Presence is not authentication/build/service readiness.
+The inventory includes presence-only checks for common developer tools, package
+managers, search utilities (grep/sed/awk/find/fd/ag/ack/tree/fzf), language runtimes
+(ruby/php/elixir/javac/mvn/gradle/composer/mix), Python environment/linter tools
+(poetry/pdm/pipenv/conda/mamba/virtualenv/ruff/black/mypy), compression/patch tools
+(gzip/bzip2/xz/zstd/7z/patch/diff/rsync), container/IaC utilities (docker-compose/podman-compose/nix/bazel/git-lfs/yq),
+and extra project markers (Gemfile, pom.xml, build.gradle, mix.exs, flake.nix, mise.toml, Justfile, etc.).
+New presence-only entries never execute even with --versions. Presence is not authentication/build/service readiness.
 --versions remains explicit opt-in to the existing fixed allowlist.
 No test/build/browser execution, installs, repairs, environment dump or
 project-content reading. Workspace markers and disk facts use existing APIs.
