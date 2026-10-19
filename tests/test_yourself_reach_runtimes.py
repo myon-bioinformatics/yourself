@@ -213,3 +213,9 @@ def test_cli_reach_and_runtime_lines(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "playwright_browsers: (no cache)" in out and "path_pythons: (none)" in out
     assert "git_merge_tree_write_tree" not in out
+
+
+def test_runtime_facts_path_pythons_range(monkeypatch):
+    monkeypatch.setattr(yourself.shutil, "which", lambda cmd: "/usr/bin/" + cmd if cmd in ("python3.8", "python3.15") else None)
+    facts = yourself.runtime_facts()
+    assert facts["path_pythons"] == ["3.8", "3.15"]

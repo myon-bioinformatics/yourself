@@ -228,9 +228,12 @@ The main is only an entry/formatting layer: default calls existing
 --minimal calls `collect()`. No new main-specific diagnostic engine or
 project recommendation function is introduced.
 
-The inventory now includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
-jq/curl/ffmpeg/magick/tsc as presence-only entries. New entries never execute
-even with --versions. Presence is not authentication/build/service readiness.
+The inventory includes gh/uv/pip/pipx/npx/pnpm/yarn/playwright/actionlint/
+jq/curl/ffmpeg/magick/tsc/ruby/gem/bundle/swift/mvn/gradle/mix/nix/task/bazel/meson/ruff/mypy
+as presence-only entries. New entries never execute even with --versions.
+Presence is not authentication/build/service readiness. Workspace markers also include
+ecosystem markers such as bun.lockb, Gemfile, pom.xml, build.gradle, mix.exs, flake.nix,
+justfile, Taskfile.yml, and .pre-commit-config.yaml.
 --versions remains explicit opt-in to the existing fixed allowlist.
 No test/build/browser execution, installs, repairs, environment dump or
 project-content reading. Workspace markers and disk facts use existing APIs.

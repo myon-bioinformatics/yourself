@@ -146,12 +146,18 @@ _COMMANDS = {
     'podman': None, 'nerdctl': None, 'helm': None, 'kind': None, 'minikube': None,
     'mise': None, 'asdf': None, 'just': None,
     'ssh': None, 'wget': None, 'zip': None, 'unzip': None, 'tar': None,
+    'ruby': None, 'gem': None, 'bundle': None, 'swift': None,
+    'mvn': None, 'gradle': None, 'mix': None, 'nix': None,
+    'task': None, 'bazel': None, 'meson': None, 'ruff': None, 'mypy': None,
 }
 _MARKERS = ('pyproject.toml', 'requirements.txt', 'package.json', 'pubspec.yaml',
             'Dockerfile', 'compose.yaml', 'docker-compose.yml', 'CMakeLists.txt',
             'BUILD.gn', 'WORKSPACE', '.goma', 'Makefile', 'Cargo.toml', 'go.mod',
             'tsconfig.json', 'pnpm-workspace.yaml', 'deno.json', 'tox.ini',
-            'noxfile.py')
+            'noxfile.py', 'bun.lockb', 'bunfig.toml', 'Gemfile', 'Rakefile',
+            'pom.xml', 'build.gradle', 'build.gradle.kts', 'build.sbt',
+            'mix.exs', 'flake.nix', 'justfile', 'Taskfile.yml', 'Taskfile.yaml',
+            '.pre-commit-config.yaml')
 
 
 def command_inventory(names=None, *, versions=False, timeout=2):
@@ -1126,7 +1132,7 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
             if match:
                 facts["uv_pythons"].append({"implementation": match.group(1), "version": match.group(2),
                                             "platform": match.group(3)})
-    facts["path_pythons"] = ["3.%d" % minor for minor in range(8, 15) if shutil.which("python3.%d" % minor)]
+    facts["path_pythons"] = ["3.%d" % minor for minor in range(8, 16) if shutil.which("python3.%d" % minor)]
     if versions:
         row = command_inventory(["git"], versions=True, timeout=timeout)[0]
         parts = tuple(int(x) for x in (row["version"] or "0").split(".")[:2])
