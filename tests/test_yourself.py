@@ -122,8 +122,10 @@ class IntegrationTests(unittest.TestCase):
                 modules.extend(a.name.split(".")[0] for a in node.names)
             elif isinstance(node, ast.ImportFrom):
                 modules.append(node.module.split(".")[0])
-        for name in modules:
-            self.assertIn(name, sys.stdlib_module_names)
+        stdlib_names = getattr(sys, "stdlib_module_names", None)
+        if stdlib_names is not None:
+            for name in modules:
+                self.assertIn(name, stdlib_names)
         self.assertFalse(set(modules) & {"socket", "http"})
 
     def test_cli_from_other_directory(self):
