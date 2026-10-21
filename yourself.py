@@ -423,6 +423,17 @@ def container_facts(*, proc_root="/proc", root="/"):
     if (base / "run" / ".containerenv").exists():
         kinds.append("podman")
     try:
+        osrelease = (proc / "sys" / "kernel" / "osrelease").read_text(encoding="ascii", errors="replace").lower()
+        if "wsl" in osrelease or "microsoft" in osrelease:
+            kinds.append("wsl")
+    except OSError:
+        try:
+            version = (proc / "version").read_text(encoding="ascii", errors="replace").lower()
+            if "wsl" in version or "microsoft" in version:
+                kinds.append("wsl")
+        except OSError:
+            pass
+    try:
         cgroup = (proc / "1" / "cgroup").read_text(encoding="utf-8", errors="replace")
         for marker, kind in (("docker", "docker"), ("kubepods", "kubernetes"),
                              ("containerd", "containerd"), ("lxc", "lxc")):
@@ -439,23 +450,7 @@ def container_facts(*, proc_root="/proc", root="/"):
         virtualized = " hypervisor" in (proc / "cpuinfo").read_text(encoding="ascii", errors="replace")
     except OSError:
         virtualized = None
-    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized, "wsl": _wsl_kind(proc)}
-
-
-def _wsl_kind(proc):
-    """'wsl2' / 'wsl1' from the kernel release, else None. WSL is a VM or a
-    compatibility layer, not a container, so it never sets in_container."""
-    for path in (proc / "sys" / "kernel" / "osrelease", proc / "version"):
-        try:
-            text = path.read_text(encoding="ascii", errors="replace").lower()
-        except OSError:
-            continue
-        if "wsl2" in text or "microsoft-standard" in text:
-            return "wsl2"
-        if "microsoft" in text or "wsl" in text:
-            return "wsl1"
-        return None
-    return None
+    return {"in_container": bool(kinds), "kinds": kinds, "virtualized": virtualized}
 
 
 # Fixed probes run by default (shell=False, bounded time and output). Their
@@ -613,7 +608,10 @@ def session_facts():
             "display": flags(("DISPLAY", "WAYLAND_DISPLAY")),
             "python_executable": sys.executable, "virtualenv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
             "ca_env": flags(("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE")),
-            "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK)}
+            "ci": flags(("CI", "GITHUB_ACTIONS")),
+            "github_env": flags(("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT",
+                                 "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL")),
+            "writable_cwd": os.access(".", os.W_OK)}
 
 
 def _duration(seconds):
@@ -1151,6 +1149,9 @@ def to_text(facts):
         for name, value in session["ca_env"].items():
             put("ca_env." + name, value)
         put("ci", " ".join("%s=%s" % (k, str(v).lower()) for k, v in session["ci"].items()))
+        if "github_env" in session:
+            for name, value in session["github_env"].items():
+                put("github_env." + name, value)
     put("os", " ".join(str(facts["os"][k]) for k in ("system", "release", "machine")))
     if facts.get("os_release"):
         put("os_release", " ".join(facts["os_release"].values()))
@@ -1164,8 +1165,6 @@ def to_text(facts):
         if container["kinds"]:
             put("container_kinds", ", ".join(container["kinds"]))
         put("virtualized", container["virtualized"])
-        if container.get("wsl"):
-            put("wsl", container["wsl"])
     network = facts.get("network")
     if network is not None:
         put("hostname", network["hostname"])

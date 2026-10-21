@@ -87,6 +87,27 @@ def test_session_facts_flags_only_for_secrets(monkeypatch):
     assert "display: false (headless)\n" in yourself.to_text(facts)
 
 
+def test_session_facts_github_env(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret123456")
+    monkeypatch.setenv("ACTIONS_RUNTIME_TOKEN", "art_secret789")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_PAT", raising=False)
+    monkeypatch.delenv("ACTIONS_ID_TOKEN_REQUEST_URL", raising=False)
+
+    s = yourself.session_facts()
+    assert s["github_env"]["GITHUB_TOKEN"] is True
+    assert s["github_env"]["ACTIONS_RUNTIME_TOKEN"] is True
+    assert s["github_env"]["GH_TOKEN"] is False
+    assert "ghp_secret" not in str(s) and "art_secret" not in str(s)
+
+    facts = yourself.collect()
+    facts["session"] = s
+    rendered = yourself.to_text(facts)
+    assert "github_env.GITHUB_TOKEN: true\n" in rendered
+    assert "github_env.GH_TOKEN: false\n" in rendered
+    assert "ghp_secret" not in rendered
+
+
 def test_unsupported_platform_keeps_the_bindings_shape(monkeypatch):
     # macOS / Windows: same keys as Linux, measured=False, so the CLI output shape is stable.
     monkeypatch.setattr(yourself.platform, "system", lambda: "Darwin")

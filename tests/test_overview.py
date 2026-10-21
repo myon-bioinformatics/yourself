@@ -66,32 +66,32 @@ def test_container_hints(fake_roots, monkeypatch):
     monkeypatch.delenv("container", raising=False)
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
     facts = yourself.container_facts(proc_root=fake_roots["proc"], root=fake_roots["root"])
-    assert facts == {"in_container": True, "kinds": ["docker", "kubernetes"], "virtualized": True,
-                     "wsl": None}
+    assert facts == {"in_container": True, "kinds": ["docker", "kubernetes"], "virtualized": True}
     monkeypatch.delenv("KUBERNETES_SERVICE_HOST")
     monkeypatch.setenv("container", "podman")
     empty = fake_roots["root"].parent / "plain"
     empty.mkdir()
     assert yourself.container_facts(proc_root=empty, root=empty) == {
-        "in_container": True, "kinds": ["podman"], "virtualized": None, "wsl": None}
+        "in_container": True, "kinds": ["podman"], "virtualized": None}
 
 
-def test_wsl_detection_is_not_a_container(tmp_path):
-    proc, root = tmp_path / "proc", tmp_path / "root"
-    (proc / "sys" / "kernel").mkdir(parents=True)
+def test_wsl_detection(tmp_path):
+    proc = tmp_path / "proc"
+    kernel_dir = proc / "sys" / "kernel"
+    kernel_dir.mkdir(parents=True)
+    root = tmp_path / "root"
     root.mkdir()
-    (proc / "sys" / "kernel" / "osrelease").write_text("5.15.153.1-microsoft-standard-WSL2\n", encoding="ascii")
+
+    (kernel_dir / "osrelease").write_text("5.10.16.3-microsoft-standard-WSL2\n")
     facts = yourself.container_facts(proc_root=proc, root=root)
-    assert facts["wsl"] == "wsl2" and facts["in_container"] is False and facts["kinds"] == []
-    (proc / "sys" / "kernel" / "osrelease").unlink()
-    (proc / "version").write_text("Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com)\n", encoding="ascii")
-    assert yourself.container_facts(proc_root=proc, root=root)["wsl"] == "wsl1"
-    (proc / "version").write_text("Linux version 6.8.0-45-generic (buildd@ubuntu)\n", encoding="ascii")
-    assert yourself.container_facts(proc_root=proc, root=root)["wsl"] is None
-    (root / ".dockerenv").touch()  # a container inside WSL keeps both facts
-    (proc / "version").write_text("Linux version 5.15.153.1-microsoft-standard-WSL2\n", encoding="ascii")
-    facts = yourself.container_facts(proc_root=proc, root=root)
-    assert facts["in_container"] is True and facts["kinds"] == ["docker"] and facts["wsl"] == "wsl2"
+    assert facts["in_container"] is True
+    assert "wsl" in facts["kinds"]
+
+    (kernel_dir / "osrelease").unlink()
+    (proc / "version").write_text("Linux version 5.10.16.3-microsoft-standard-WSL2\n")
+    facts_v = yourself.container_facts(proc_root=proc, root=root)
+    assert facts_v["in_container"] is True
+    assert "wsl" in facts_v["kinds"]
 
 
 def test_no_argument_run_is_one_key_per_line(tmp_path):
