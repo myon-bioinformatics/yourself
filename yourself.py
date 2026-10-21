@@ -22,7 +22,7 @@ __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
            "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
            "resource_facts", "session_facts", "runner_fingerprint", "runner_fingerprint_summary",
-           "reach", "runtime_facts",
+           "reach", "runtime_facts", "conflict_hints",
            "main"]
 
 
@@ -118,6 +118,11 @@ def to_markdown(facts):
     for key in ("os_release", "workspace", "listeners"):
         if facts.get(key) is not None:
             rows.extend(["", key + ": " + _cell(facts[key])])
+    hints = facts.get("hints")
+    if hints:
+        rows.extend(["", "## Diagnostic Hints", ""])
+        for hint in hints:
+            rows.append("- " + _cell(hint))
     return "\n".join(rows) + "\n"
 
 
@@ -330,6 +335,7 @@ def diagnose(*, directory=None, include_host=False, versions=False,
             facts['os_release'] = {k: release[k] for k in ('ID', 'VERSION_ID') if k in release}
         except OSError:
             pass
+    facts['hints'] = conflict_hints(facts)
     return facts
 
 
@@ -615,8 +621,8 @@ def resource_facts(*, proc_root="/proc", cgroup_root="/sys/fs/cgroup"):
 
 def session_facts():
     """Who/where/when this process runs: user, shell, locale, time zone,
-    display (headless?), Python executable and virtualenv, CA bundle and CI
-    variables (set/unset only)."""
+    display (headless?), Python executable and virtualenv, CA bundle, CI and
+    conflict-relevant environment flags."""
     import getpass
     from datetime import datetime
     try:
@@ -631,6 +637,10 @@ def session_facts():
         except OSError:
             zone = None
     flags = lambda names: {name: bool(os.environ.get(name)) for name in names}
+    env_vars = {name: os.environ.get(name) for name in
+                ("VIRTUAL_ENV", "CONDA_PREFIX", "POETRY_ACTIVE", "UV_PROJECT_ENVIRONMENT",
+                 "PYTHONNOUSERSITE", "CC", "CXX", "CUDA_VISIBLE_DEVICES")
+                if os.environ.get(name) is not None}
     return {"user": user, "uid": uid, "root": uid == 0 if uid is not None else None,
             "home": str(Path.home()) if os.environ.get("HOME") else None,
             "shell": Path(os.environ.get("SHELL", "")).name or None,
@@ -639,7 +649,45 @@ def session_facts():
             "display": flags(("DISPLAY", "WAYLAND_DISPLAY")),
             "python_executable": sys.executable, "virtualenv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
             "ca_env": flags(("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE")),
-            "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK)}
+            "ci": flags(("CI", "GITHUB_ACTIONS")), "writable_cwd": os.access(".", os.W_OK),
+            "env_vars": env_vars}
+
+
+def conflict_hints(facts):
+    """Diagnose common environment pitfalls, conflicts, and mismatches from observed facts."""
+    hints = []
+    session = facts.get("session") or {}
+    if session:
+        env_vars = session.get("env_vars") or {}
+        if session.get("virtualenv") and not env_vars.get("PYTHONNOUSERSITE"):
+            hints.append("virtualenv is active but PYTHONNOUSERSITE is unset; user site-packages may cause dependency conflicts")
+        if env_vars.get("VIRTUAL_ENV") and env_vars.get("CONDA_PREFIX"):
+            hints.append("both VIRTUAL_ENV and CONDA_PREFIX are set; active Python environments may conflict")
+        for comp in ("CC", "CXX"):
+            val = env_vars.get(comp)
+            if val and not shutil.which(val.split()[0]):
+                hints.append("%s is set to %r but executable is not found on PATH" % (comp, val))
+        cuda = env_vars.get("CUDA_VISIBLE_DEVICES")
+        if cuda in ("", "-1", "none"):
+            hints.append("CUDA_VISIBLE_DEVICES is set to %r which masks GPU access" % cuda)
+
+    network = facts.get("network") or {}
+    if any(network.get("proxy_set", {}).values()):
+        covers = network.get("no_proxy_covers") or {}
+        if not covers.get("localhost") or not covers.get("127.0.0.1"):
+            hints.append("proxy is set but NO_PROXY does not cover loopback addresses; local requests may go through proxy")
+
+    hosts = facts.get("hosts") or {}
+    if hosts.get("ipv6_loopback") is False and "::1" in hosts.get("names", {}).get("localhost", []):
+        hints.append("::1 is mapped in /etc/hosts for localhost but IPv6 loopback is disabled in kernel")
+
+    probes = facts.get("probes") or {}
+    docker_cli = any(t.get("name") == "docker" and t.get("available") for t in facts.get("commands", []))
+    docker_probe = probes.get("docker.server")
+    if docker_cli and docker_probe and not docker_probe.get("ok"):
+        hints.append("docker CLI is available but docker server probe failed (%s)" % docker_probe.get("error", "failed"))
+
+    return hints
 
 
 def _duration(seconds):
@@ -1250,6 +1298,8 @@ def to_text(facts):
         if tool.get("version"):
             value = "true " + tool["version"]
         put("tool." + tool["name"], value)
+    for idx, hint in enumerate(facts.get("hints") or [], 1):
+        put("hint.%d" % idx, hint)
     runtimes = facts.get("runtimes")
     if runtimes is not None:
         builds = runtimes["playwright"]["builds"]
@@ -1360,6 +1410,7 @@ def main(argv=None):
         if not args.no_probes:
             facts["probes"] = probe_all()
         facts["runtimes"] = runtime_facts(versions=args.versions)
+        facts["hints"] = conflict_hints(facts)
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])

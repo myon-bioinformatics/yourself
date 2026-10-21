@@ -216,3 +216,43 @@ def test_extended_api_standalone_vendor(tmp_path):
         cwd=tmp_path, capture_output=True, text=True, timeout=20)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == ''
+
+
+def test_conflict_hints():
+    facts = {
+        "session": {
+            "virtualenv": True,
+            "env_vars": {
+                "VIRTUAL_ENV": "/venv",
+                "CONDA_PREFIX": "/conda",
+                "CC": "missing-gcc-binary",
+                "CUDA_VISIBLE_DEVICES": "",
+            }
+        },
+        "network": {
+            "proxy_set": {"HTTPS_PROXY": True},
+            "no_proxy_covers": {"localhost": False, "127.0.0.1": False},
+        },
+        "hosts": {
+            "names": {"localhost": ["127.0.0.1", "::1"]},
+            "ipv6_loopback": False,
+        },
+        "commands": [{"name": "docker", "available": True}],
+        "probes": {"docker.server": {"ok": False, "error": "daemon down"}},
+    }
+    hints = yourself.conflict_hints(facts)
+    assert any("PYTHONNOUSERSITE" in h for h in hints)
+    assert any("CONDA_PREFIX" in h for h in hints)
+    assert any("missing-gcc-binary" in h for h in hints)
+    assert any("CUDA_VISIBLE_DEVICES" in h for h in hints)
+    assert any("NO_PROXY" in h for h in hints)
+    assert any("::1" in h for h in hints)
+    assert any("docker server probe failed" in h for h in hints)
+
+    markdown = yourself.to_markdown({"hints": hints})
+    assert "## Diagnostic Hints" in markdown
+    assert "PYTHONNOUSERSITE" in markdown
+
+    text = yourself.to_text({"hints": hints, "os": {"system": "Linux", "release": "6.0", "machine": "x86_64"},
+                             "runtime": {"implementation": "CPython", "version": "3.12", "bits": 64}})
+    assert "hint.1:" in text

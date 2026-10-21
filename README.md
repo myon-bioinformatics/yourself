@@ -14,6 +14,7 @@ Python target: 3.10–3.14. Test dependencies are isolated in `tests/requirement
 | --- | --- |
 | `collect(...)` | OS and Python runtime observations; optional host name and immediate directory summary. |
 | `directory_summary(path, sample_size=10)` | Immediate file/directory/symlink/other counts, sorted bounded name sample and entry errors. |
+| `conflict_hints(facts)` | Evaluates observed environment facts for common conflicts and pitfalls (virtualenv/user-site overlaps, proxy loopback issues, missing compilers, CUDA masking) and returns concise diagnostic hints. |
 | `to_json(facts)` | Sorted Unicode JSON, rejecting non-finite numbers. |
 | `to_markdown(facts)` | Concise report with control characters and table/HTML delimiters escaped. |
 
