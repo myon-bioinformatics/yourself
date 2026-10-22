@@ -2,6 +2,14 @@
 
 Single-file, standard-library Python tool for read-only inspection of host, OS, and runtime facts. Produces concise, copyable environment reports for troubleshooting and AI context.
 
+## Concept overview
+
+![Host and optional directory facts pass through read-only collection and diagnosis to text, Markdown, or JSON reports.](docs/images/yourself-concept.png)
+
+Read-only host and runtime observations are formatted as text, Markdown, or JSON for troubleshooting and assistant context. Optional observation scopes and fixed probes are described below.
+
+The panel’s hostname-default note applies to `collect()`. The no-argument CLI includes hostname and network facts; `--no-network` omits that block, while `--minimal` keeps only OS/Python observations.
+
 ## Design
 
 The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
