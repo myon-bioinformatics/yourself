@@ -10,6 +10,12 @@ Read-only host and runtime observations are formatted as text, Markdown, or JSON
 
 The panel’s hostname-default note applies to `collect()`. The no-argument CLI includes hostname and network facts; `--no-network` omits that block, while `--minimal` keeps only OS/Python observations.
 
+### Challenges, roles, and outcomes
+
+![Challenges, roles, and outcomes for environment observation, diagnosis, and text, Markdown, or JSON reports.](docs/images/yourself-concept-v2.png)
+
+Complementary view of observation, diagnosis, and report output. The panel’s “recommendations” wording is conceptual: `diagnose()` reports facts, not recommendations or a complete dependency/configuration inventory. The hostname/network disclosure notes above still apply.
+
 ## Design
 
 The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
