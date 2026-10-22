@@ -34,7 +34,7 @@ print(yourself.to_json(yourself.collect(include_host=True)))
 - A sorted sample is deterministic for the same directory snapshot. Environment values can change. Filesystem races are not isolated.
 - Default output omits host name and directory. Opt-in names/paths can identify a machine or project; choose what to include before sharing.
 - The no-argument CLI also reports host name, local IPv4/IPv6 addresses, interfaces, the default gateway, DNS servers, container/VM hints (Docker, Podman, Kubernetes, containerd, LXC, hypervisor flag) and whether proxy variables are set. All of it comes from local files (`/proc`, `/sys`, `/etc/resolv.conf`, marker files); no packets, DNS lookups or commands. Proxy values are never printed because they can carry credentials. `--no-network` omits this block.
-- No environment-variable dump, username collection, recursive inventory, project inference, dependency inspection or Git identity. Repository position (repository, SHA, branch, changes) is `python gh_identity.py local-position`; this file stays dependency-free.
+- No environment-variable dump, username collection, recursive inventory, project inference, dependency inspection or Git identity. Repository position (repository, SHA, branch, changes) is reported by `python gh_identity.py local-position` in the [gh_identity](https://github.com/myon-bioinformatics/gh_identity) repository, not by this file, which stays dependency-free.
 
 ## One command (`python yourself.py`)
 
