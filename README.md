@@ -16,6 +16,12 @@ The panel’s hostname-default note applies to `collect()`. The no-argument CLI 
 
 Complementary view of observation, diagnosis, and report output. The panel’s “recommendations” wording is conceptual: `diagnose()` reports facts, not recommendations or a complete dependency/configuration inventory. The hostname/network disclosure notes above still apply.
 
+### From environment facts to next steps
+
+![Four-step workflow: run yourself in the target environment, observe host/OS/runtime facts, produce a concise report, and use it for troubleshooting or assistant context.](docs/images/yourself-workflow-concept.png)
+
+An additional workflow view; the command and terminal output in the illustration are conceptual. Run `python yourself.py` as shown below. Tool-inventory versions require `--versions`; this is not a general package/configuration inventory. “Read-only” and “Safe” describe the observation-only intent, not sandboxing or a guarantee that every report is safe to share: the default CLI includes user, path, hostname, and network facts and runs fixed probes (`--no-probes` skips those probes).
+
 ## Design
 
 The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
