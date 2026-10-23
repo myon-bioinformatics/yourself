@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/brand/icon-512.png" width="200" alt="yourself"></p>
+
 # yourself
 
 Single-file, standard-library Python tool for read-only inspection of host, OS, and runtime facts. Produces concise, copyable environment reports for troubleshooting and AI context.
