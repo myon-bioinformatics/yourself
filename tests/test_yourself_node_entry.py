@@ -106,3 +106,17 @@ def test_mutated_entry_breaks_parity(tmp_path, old, new):
     assert old in text
     (tmp_path / f"{TOOL}.cjs").write_text(text.replace(old, new), encoding="utf-8")
     assert any(_parity(tmp_path, c["args"])[0] != _parity(ROOT, c["args"])[1] for c in CASES)
+
+
+@needs_node
+def test_node_floor_rejects_old_versions():
+    script = (
+        "const m = require(process.argv[1]);"
+        "const bad = ['v22.14.0', '18.0.0', 'junk'].filter((v) => { try { m.assertNodeFloor(v); return true; } catch (e) { return !/requires Node 24\\+/.test(e.message); } });"
+        "m.assertNodeFloor('v24.0.0');"
+        "process.stdout.write(JSON.stringify({bad, min: m.NODE_MIN_MAJOR}));"
+    )
+    p = subprocess.run([NODE, "-e", script, str(ROOT / f"{TOOL}.cjs")],
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout) == {"bad": [], "min": 24}

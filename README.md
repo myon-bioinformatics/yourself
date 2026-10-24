@@ -180,6 +180,17 @@ python scripts/yourself_cli.py --include-host
 
 Outputs only to stdout; error diagnostics go to stderr. Exit code 0 = successful observations, 2 = invalid input or directory errors. No report file is written automatically.
 
+## Running from Node.js (`yourself.cjs`)
+
+On Node 24+, `node yourself.cjs [args...]` runs `yourself.py` with the same arguments, stdout/stderr and exit code. It only launches Python through the parent repository `myon-bioinformatics`'s shared launcher `vendor/py_launch.cjs` (locked in `vendor.lock.json`); it never launches Node from Node and does not use `shell: true`. Set `YOURSELF_PYTHON` to choose the interpreter. Older Node exits 1 with a one-line `yourself.cjs requires Node 24+` message; if no Python can be launched, it exits 2.
+
+```bash
+node yourself.cjs --minimal --no-network --no-probes --format json
+YOURSELF_PYTHON=/usr/bin/python3 node yourself.cjs --help
+```
+
+Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (Node tests are skipped when Node 24+ is not found).
+
 ## Tests
 
 ```sh
