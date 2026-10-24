@@ -294,3 +294,36 @@ Runtime `requires-python` does not raise the vendoring floor to the development
 floor. CI pins `actions/setup-python` v7.0.0 and `astral-sh/setup-uv` v10.3.0
 by full commit SHA and installs uv 0.13.3. Setup actions using Node 24 require
 runner 2.327.1 or newer (GitHub-hosted runners satisfy this).
+
+### Advanced report CLI error contract
+
+`scripts/yourself_cli.py` keeps its default Markdown format, existing flags and
+successful JSON report fields. `--help` describes each option. Exit statuses are:
+
+| Status | Meaning |
+| --- | --- |
+| 0 | Complete observation report |
+| 1 | Execution failure (for example, permission denied) |
+| 2 | Invalid arguments or rejected directory/tool request |
+| 3 | Partial report: directory, workspace, listener, or command observation failed |
+
+Previously partial reports returned 2; scripts that treated 2 as partial must now
+handle 3. Missing tools and unsupported/unobservable capabilities alone retain
+their existing observation semantics; they are not necessarily failures.
+
+With `--format json` (or `--format=json`), failures emit a JSON object to stdout
+and no diagnostic on stderr when stdout is writable. If output fails, exit 1
+uses a fixed stderr diagnostic; a complete JSON record cannot be guaranteed on a
+broken stream. Its `error` object has stable `code`, `message` and
+`exit_code` fields. Codes are `invalid_input`, `execution_failed`, and
+`partial_result`. A partial JSON report retains its normal fields and adds
+`error`; a total failure contains `schema_version: 1` and `error`. Text errors
+are one stderr line; partial Markdown remains on stdout. Parse failures honor
+the last explicit format before `--`. `--help` remains human-readable.
+
+Diagnostics use fixed messages: argument values, exception text and environment
+values are not copied into errors. Normal observations still intentionally
+include requested directory names and opt-in host information. Reports may
+therefore need redaction before sharing. This change affects only the advanced
+script; `yourself.py` remains a standalone standard-library module and its own
+CLI contract is unchanged.
