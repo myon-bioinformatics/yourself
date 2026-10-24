@@ -34,6 +34,17 @@ NODE = _node()
 needs_node = pytest.mark.skipif(NODE is None, reason="Node 24+ not available (set NODE)")
 
 
+def test_ci_provisions_node_instead_of_skipping_node_parity():
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        assert NODE is not None, "CI must configure Node >=24 before pytest"
+
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  test:\n", 1)[1].split("\n  failure-identity:", 1)[0]
+    assert "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1" in job
+    assert "node-version: '26'" in job
+    assert job.index("actions/setup-node@") < job.index("name: Test with branch coverage")
+
+
 def _env() -> dict[str, str]:
     env = dict(os.environ)
     env[ENV_VAR] = sys.executable
