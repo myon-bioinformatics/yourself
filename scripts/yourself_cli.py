@@ -1,6 +1,7 @@
 """Thin report CLI; optional fixed version observations, no project-content reads."""
 import argparse
 import json
+import os
 import stat
 import sys
 from pathlib import Path
@@ -50,7 +51,7 @@ def _error(code, message, exit_code, json_mode, facts=None):
 def _main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     json_mode = _json_requested(argv)
-    parser = Parser(description="Read-only OS/runtime observations", 
+    parser = Parser(description="Read-only OS/runtime observations",
                     epilog="Exit codes: 0 success; 1 execution failure; 2 invalid input; "
                            "3 partial observations. JSON errors are written to stdout; "
                            "text errors to stderr. Successful report schemas are unchanged.")
@@ -114,6 +115,13 @@ def main(argv=None):
             sys.stdout.flush()
             return result
         except (OSError, ValueError, TypeError):
+            # Python flushes stdout again at shutdown. Redirect the failed fd so
+            # that buffered failures cannot override exit 1 with exit 120.
+            try:
+                with open(os.devnull, "w") as sink:
+                    os.dup2(sink.fileno(), sys.stdout.fileno())
+            except (OSError, ValueError, AttributeError):
+                pass
             try:
                 print("error: execution_failed: Could not write the report", file=sys.stderr)
             except (OSError, ValueError):

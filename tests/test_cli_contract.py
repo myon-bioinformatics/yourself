@@ -145,3 +145,14 @@ def test_output_failure(monkeypatch, capsys, flush_only):
     out = capsys.readouterr()
     assert 'SECRET' not in out.err
     assert 'execution_failed' in out.err
+
+
+def test_real_buffered_output_failure():
+    if not Path('/dev/full').exists():
+        pytest.skip('requires a full output device')
+    with open('/dev/full', 'w') as output:
+        result = subprocess.run([sys.executable, '-S', str(ROOT / 'scripts/yourself_cli.py'),
+                                 '--format=json'], stdout=output, stderr=subprocess.PIPE,
+                                text=True, timeout=20)
+    assert result.returncode == 1
+    assert result.stderr == 'error: execution_failed: Could not write the report\n'
