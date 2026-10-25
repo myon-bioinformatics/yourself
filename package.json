@@ -1,0 +1,7 @@
+{
+  "name": "yourself",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  }
+}
