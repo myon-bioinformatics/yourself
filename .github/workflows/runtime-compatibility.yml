@@ -8,7 +8,8 @@ permissions:
   contents: read
 jobs:
   runtime:
-    runs-on: ${{ matrix.os }}
+    # Ubuntu 26.04 has no setup-python 3.9 build; keep this stdlib-only lane.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.9' && 'ubuntu-24.04' || matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
