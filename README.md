@@ -208,7 +208,7 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
-Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
+Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.15 (Linux) and 3.15 (Windows/macOS).
 
 ## Compact environment diagnosis (0.2)
 
