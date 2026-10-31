@@ -194,7 +194,6 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 ## Tests
 
 ```sh
-uv pip install -r tests/requirements.txt
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
