@@ -301,7 +301,7 @@ uv run --locked pytest
 `pyproject.toml` is the canonical development dependency definition; legacy
 `tests/requirements.txt` remains for downstream callers that still use pip.
 Runtime `requires-python` does not raise the vendoring floor to the development
-floor. CI pins `actions/setup-python` v7.0.0 and `astral-sh/setup-uv` v10.3.0
+floor. CI pins `actions/setup-python` v7.0.0 and `astral-sh/setup-uv` v10.3.3
 by full commit SHA and installs uv 0.13.3. Setup actions using Node 24 require
 runner 2.327.1 or newer (GitHub-hosted runners satisfy this).
 
