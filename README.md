@@ -170,6 +170,17 @@ browser builds with revisions (`playwright_chromium: full+shell`, `shell only
 (--only-shell)` or `full only (--no-shell)`), uv-managed interpreters, `python3.X` on
 PATH and, with `--versions`, whether git has `merge-tree --write-tree` (2.38+).
 
+It also counts the Python packages installed for the interpreter that runs it, by who
+installed them (`python_packages: 167 (debian 4, unknown 11, uv 152)`). The word comes from
+each `*.dist-info/INSTALLER` (`pip`, `uv`, `conda`; `unknown` when the file is missing or
+unreadable). Nothing is imported or run, but Python's installed metadata finder hooks are
+consulted and must be trusted. Errors from discovery or a metadata reader are reported by
+kind, mark the count partial (`[partial]`, `python_packages_errors`) and produce exit
+code 2; a bad `INSTALLER` does not discard a package whose name was read. Some metadata
+readers suppress filesystem errors and return no `INSTALLER` content; these are
+indistinguishable from a missing file and report `unknown`. Run it under each interpreter to
+compare them (`python3.13 yourself.py`, `.venv/bin/python yourself.py`).
+
 ## CLI
 
 ```sh
@@ -337,3 +348,4 @@ include requested directory names and opt-in host information. Reports may
 therefore need redaction before sharing. This change affects only the advanced
 script; `yourself.py` remains a standalone standard-library module and its own
 CLI contract is unchanged.
+

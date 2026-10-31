@@ -22,7 +22,7 @@ __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
            "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
            "resource_facts", "session_facts", "runner_fingerprint", "runner_fingerprint_summary",
-           "reach", "runtime_facts",
+           "reach", "runtime_facts", "python_packages",
            "main"]
 
 
@@ -118,6 +118,11 @@ def to_markdown(facts):
     for key in ("os_release", "workspace", "listeners"):
         if facts.get(key) is not None:
             rows.extend(["", key + ": " + _cell(facts[key])])
+    packages = facts.get("python_packages")
+    if packages is not None:
+        rows.extend(["", "## Python packages", "", "| Fact | Observed value |", "| --- | --- |"])
+        for key in ("count", "installers", "complete", "errors"):
+            rows.append("| " + key + " | " + _cell(packages[key]) + " |")
     return "\n".join(rows) + "\n"
 
 
@@ -1156,13 +1161,54 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
     return facts
 
 
+def python_packages(*, distributions=None):
+    """Packages installed for the running interpreter, counted by who installed them.
+
+    Each ``*.dist-info/INSTALLER`` is the one-word file pip, uv, conda and others write
+    (``unknown`` when missing or unreadable, e.g. OS-packaged). Nothing is imported or run, but
+    Python's installed metadata finder hooks are consulted and must be trusted. A name seen
+    twice on ``sys.path`` counts once (first wins, as for import). Errors are reported by
+    kind, never by message, and mark the result incomplete; lookup errors are not absence.
+    """
+    from importlib import metadata
+    seen, errors = {}, []
+    try:
+        for dist in (metadata.distributions() if distributions is None else distributions):
+            try:
+                name = dist.metadata["Name"]
+                if not isinstance(name, str) or not name:
+                    raise ValueError("missing package name")
+                key = re.sub(r"[-_.]+", "-", name).lower()
+                if key in seen:
+                    continue
+            except Exception as error:
+                # Finder implementations may fail too; preserve partial observations.
+                errors.append("metadata:" + type(error).__name__)
+                continue
+            try:
+                raw = (dist.read_text("INSTALLER") or "").strip().lower()
+                installer = (raw if re.fullmatch(r"[a-z0-9][a-z0-9._+-]{0,31}", raw)
+                             else ("other" if raw else "unknown"))
+            except Exception as error:
+                errors.append("installer:" + type(error).__name__)
+                installer = "unknown"
+            seen[key] = installer
+    except Exception as error:
+        errors.append("discovery:" + type(error).__name__)
+    installers = {}
+    for installer in seen.values():
+        installers[installer] = installers.get(installer, 0) + 1
+    return {"count": len(seen), "installers": dict(sorted(installers.items())),
+            "complete": not errors, "errors": sorted(set(errors))}
+
+
 def to_text(facts):
     """One "key: value" line per fact; tools as true/false. Easy to grep and paste."""
     def clean(value):
         text = str(value).lower() if isinstance(value, bool) else str(value)
         return "".join("\\u%04x" % ord(c) if ord(c) < 32 or ord(c) == 127 else c for c in text)
     lines = []
-    put = lambda key, value: lines.append(key + ": " + clean(value))
+    put = lambda key, value: lines.append(clean(key) + ": " + clean(value))
     if facts.get("cwd"):
         put("cwd", facts["cwd"])
     session = facts.get("session")
@@ -1267,6 +1313,13 @@ def to_text(facts):
         put("path_pythons", ", ".join(runtimes["path_pythons"]) or "(none)")
         if runtimes["git"]:
             put("git_merge_tree_write_tree", runtimes["git"]["merge_tree_write_tree"])
+    packages = facts.get("python_packages")
+    if packages is not None:
+        put("python_packages", "%d (%s)%s" % (packages["count"], ", ".join(
+            "%s %d" % item for item in packages["installers"].items()) or "none",
+            " [partial]" if packages["errors"] else ""))
+        if packages["errors"]:
+            put("python_packages_errors", ", ".join(packages["errors"]))
     listeners = facts.get("listeners")
     if listeners is not None:
         if not listeners.get("measured"):
@@ -1363,9 +1416,11 @@ def main(argv=None):
         if not args.no_probes:
             facts["probes"] = probe_all()
         facts["runtimes"] = runtime_facts(versions=args.versions)
+        facts["python_packages"] = python_packages()
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
+    partial |= bool(facts.get("python_packages", {}).get("errors"))
     partial |= any(row["status"] in ("timeout", "execution_error", "nonzero_exit",
                                     "unrecognized_version")
                    for row in facts.get("commands", []))
@@ -1374,3 +1429,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

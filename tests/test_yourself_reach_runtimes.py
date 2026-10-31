@@ -178,7 +178,7 @@ def test_default_locations(monkeypatch, platform, env, tail):
             assert found[0].parts[-len(expected):] == expected
 
 
-def test_cli_reach_and_runtime_lines(monkeypatch, capsys):
+def test_cli_reach_and_runtime_lines(monkeypatch, capsys, fake_python_packages):
     assert yourself.main(["--reach", "bad host"]) == 1
     assert capsys.readouterr().out == "reach.bad host: invalid_host\n"
     monkeypatch.setattr(yourself, "reach", lambda hosts, timeout: [
@@ -218,3 +218,4 @@ def test_cli_reach_and_runtime_lines(monkeypatch, capsys):
 def test_runtime_facts_path_pythons_range(monkeypatch):
     monkeypatch.setattr(yourself.shutil, 'which', lambda cmd: '/trusted/' + cmd if cmd in ('python3.8', 'python3.15') else None)
     assert yourself.runtime_facts(environ={})['path_pythons'] == ['3.8', '3.15']
+
