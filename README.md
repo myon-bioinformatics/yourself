@@ -22,7 +22,7 @@ Complementary view of observation, diagnosis, and report output. The panel’s �
 
 The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
 
-Python target: 3.10–3.14 for the stdlib runtime; contributor tests use Python 3.11+ via uv (see [Runtime and development Python policy](#runtime-and-development-python-policy)). Runtime is standard-library only.
+Python target: 3.11–3.14 for the stdlib runtime; contributor tests use Python 3.11+ via uv (see [Runtime and development Python policy](#runtime-and-development-python-policy)). Runtime is standard-library only.
 
 ## Public API
 
@@ -208,7 +208,7 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
-Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.10–3.14 (Linux) and 3.10 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
+Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
 
 ## Compact environment diagnosis (0.2)
 
@@ -289,21 +289,34 @@ Exit 2 marks invalid/partial observations; output goes to stdout only.
 ## Runtime and development Python policy
 
 The standard-library runtime (`yourself.py`, vendored copies) supports Python
-**3.10+** (3.9 reached end of life in October 2025, and `platform.freedesktop_os_release`
-used by the report needs 3.10). `pyproject.toml` declares `requires-python = ">=3.10"` with
-`dependencies = []` so metadata matches the stdlib-only artifact. Contributor
-tooling is separate: `[tool.uv]` sets `environments = ["python_version >= '3.11'"]`
-and the `dev` dependency group requires Python 3.11+, so `uv sync` never targets
-3.10 even though the runtime does.
+**3.11+**. This is the supported/tested floor, not merely the oldest interpreter
+that can execute a subset of the module. As of 2026-10-31, Python
+[3.9 reached end of life on 2025-10-31](https://peps.python.org/pep-0596/#39-lifespan)
+and [3.10 on 2026-10-01](https://peps.python.org/pep-0619/#310-lifespan).
+[3.11 receives upstream security fixes until October 2027](https://devguide.python.org/versions/).
+The policy must be revisited before that support ends; use a current patch release.
+Although `platform.freedesktop_os_release` only needs 3.10, selecting 3.10 would
+not provide an upstream-supported baseline.
+
+`pyproject.toml` declares `requires-python = ">=3.11"` with `dependencies = []`.
+Contributor tooling remains separate: `[tool.uv]` sets
+`environments = ["python_version >= '3.11'"]` and the `dev` dependency group also
+requires Python 3.11+. No contributor package becomes a runtime dependency.
+This policy change is limited to this repository; it does not update consumers'
+vendored copies or interpreter configuration automatically.
 
 The `runtime-compatibility` CI workflow exercises behavior with `python -S` and
-no site-packages (no pytest install). The main `CI` workflow runs locked
+no site-packages (no pytest install), including the Linux `diagnose()` and direct
+CLI paths with fake OS-release data, package metadata and tool discovery.
+The regression rejects tool execution and real file reads. The main `CI` workflow runs locked
 `uv sync` and full pytest on 3.11+ only.
 
 ```sh
 # Stdlib runtime floor (matches CI runtime-compatibility lane)
-uv python install 3.10
-uv run --python 3.10 --no-sync python -S -m unittest discover -s tests -p test_yourself.py -v
+uv python install 3.11
+uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_yourself.py -v
+uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_workspace_runtime.py -v
+uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_diagnose_runtime.py -v
 
 # Locked contributor tests (Python 3.11+)
 uv sync --locked --python 3.11
@@ -349,4 +362,5 @@ include requested directory names and opt-in host information. Reports may
 therefore need redaction before sharing. This change affects only the advanced
 script; `yourself.py` remains a standalone standard-library module and its own
 CLI contract is unchanged.
+
 

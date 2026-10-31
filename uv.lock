@@ -1,6 +1,6 @@
 version = 1
 revision = 5
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.11'",
 ]
@@ -375,3 +375,4 @@ dev = [
     { name = "pytest-cov", marker = "python_full_version >= '3.11'", specifier = ">=5" },
     { name = "pyyaml", marker = "python_full_version >= '3.11'", specifier = ">=6" },
 ]
+
