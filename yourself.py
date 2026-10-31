@@ -121,15 +121,8 @@ def to_markdown(facts):
     packages = facts.get("python_packages")
     if packages is not None:
         rows.extend(["", "## Python packages", "", "| Fact | Observed value |", "| --- | --- |"])
-        for key in ("count", "installers", "complete", "sha256", "errors"):
+        for key in ("count", "installers", "complete", "errors"):
             rows.append("| " + key + " | " + _cell(packages[key]) + " |")
-        for module, found in packages["importable"].items():
-            rows.append("| python_importable." + _cell(module) + " | "
-                        + _cell("unmeasured" if found is None else found) + " |")
-        if packages["packages"] is not None:
-            rows.extend(["", "| Package | Version | Installer |", "| --- | --- | --- |"])
-            for item in packages["packages"]:
-                rows.append("| " + " | ".join(_cell(item[key]) for key in ("name", "version", "installer")) + " |")
     return "\n".join(rows) + "\n"
 
 
@@ -1168,23 +1161,16 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
     return facts
 
 
-# Modules that package metadata cannot show because the OS, not a wheel, provides them:
-# LibreOffice's Python bridge (``import uno``; apt ``python3-uno`` or the office program dir).
-_OS_MODULES = ("uno",)
-
-
-def python_packages(*, listing=False, distributions=None, find_spec=None):
+def python_packages(*, distributions=None):
     """Packages installed for the running interpreter, counted by who installed them.
 
     Each ``*.dist-info/INSTALLER`` is the one-word file pip, uv, conda and others write
-    (``unknown`` when missing, e.g. OS-packaged). No target module is imported and
-    no command is launched. Metadata discovery and ``find_spec`` consult Python's
-    installed finder hooks, which must be trusted; finding a spec does not prove
-    that importing the module would succeed. Lookup errors are not absence.
-    A name seen twice on ``sys.path`` counts once (first wins, as for import). ``listing``
-    adds every name/version/installer; the default keeps only counts and a digest.
+    (``unknown`` when missing or unreadable, e.g. OS-packaged). Nothing is imported or run, but
+    Python's installed metadata finder hooks are consulted and must be trusted. A name seen
+    twice on ``sys.path`` counts once (first wins, as for import). Errors are reported by
+    kind, never by message, and mark the result incomplete; lookup errors are not absence.
     """
-    from importlib import metadata, util
+    from importlib import metadata
     seen, errors = {}, []
     try:
         for dist in (metadata.distributions() if distributions is None else distributions):
@@ -1195,7 +1181,6 @@ def python_packages(*, listing=False, distributions=None, find_spec=None):
                 key = re.sub(r"[-_.]+", "-", name).lower()
                 if key in seen:
                     continue
-                version = dist.version or ""
             except Exception as error:
                 # Finder implementations may fail too; preserve partial observations.
                 errors.append("metadata:" + type(error).__name__)
@@ -1207,30 +1192,14 @@ def python_packages(*, listing=False, distributions=None, find_spec=None):
             except Exception as error:
                 errors.append("installer:" + type(error).__name__)
                 installer = "unknown"
-            seen[key] = (name, version, installer)
+            seen[key] = installer
     except Exception as error:
         errors.append("discovery:" + type(error).__name__)
-    rows = sorted(seen.values(), key=lambda row: row[0].lower())
     installers = {}
-    for _, _, installer in rows:
+    for installer in seen.values():
         installers[installer] = installers.get(installer, 0) + 1
-    digest = None
-    if not errors:
-        try:
-            digest = hashlib.sha256("\n".join("%s==%s" % (n, v) for n, v, _ in rows).encode("utf-8")).hexdigest()
-        except UnicodeError as error:
-            errors.append("digest:" + type(error).__name__)
-    importable = {}
-    for module in _OS_MODULES:
-        try:
-            importable[module] = (util.find_spec if find_spec is None else find_spec)(module) is not None
-        except Exception as error:
-            importable[module] = None
-            errors.append("importable." + module + ":" + type(error).__name__)
-    return {"count": len(rows), "installers": dict(sorted(installers.items())), "sha256": digest,
-            "complete": not errors, "errors": sorted(set(errors)),
-            "importable": importable,
-            "packages": [{"name": n, "version": v, "installer": i} for n, v, i in rows] if listing else None}
+    return {"count": len(seen), "installers": dict(sorted(installers.items())),
+            "complete": not errors, "errors": sorted(set(errors))}
 
 
 def to_text(facts):
@@ -1349,13 +1318,8 @@ def to_text(facts):
         put("python_packages", "%d (%s)%s" % (packages["count"], ", ".join(
             "%s %d" % item for item in packages["installers"].items()) or "none",
             " [partial]" if packages["errors"] else ""))
-        put("python_packages_sha256", packages["sha256"][:16] + "..." if packages["sha256"] else "unmeasured")
         if packages["errors"]:
             put("python_packages_errors", ", ".join(packages["errors"]))
-        for module, found in packages["importable"].items():
-            put("python_importable." + module, "unmeasured" if found is None else found)
-        for item in packages["packages"] or ():
-            put("package." + item["name"], "%s (%s)" % (item["version"], item["installer"]))
     listeners = facts.get("listeners")
     if listeners is not None:
         if not listeners.get("measured"):
@@ -1381,8 +1345,6 @@ def main(argv=None):
                         help="omit host name, addresses, routes, DNS and container hints")
     parser.add_argument("--no-probes", action="store_true",
                         help="do not run the docker / nvidia-smi probes")
-    parser.add_argument("--packages", action="store_true",
-                        help="also list every installed Python package with its version and installer")
     parser.add_argument("--reach", nargs="+", metavar="HOST",
                         help="opt-in: TCP + TLS handshake to each HOST[:PORT] (via HTTPS_PROXY unless NO_PROXY); "
                              "prints one line per host and exits 1 unless all are ok")
@@ -1454,7 +1416,7 @@ def main(argv=None):
         if not args.no_probes:
             facts["probes"] = probe_all()
         facts["runtimes"] = runtime_facts(versions=args.versions)
-        facts["python_packages"] = python_packages(listing=args.packages)
+        facts["python_packages"] = python_packages()
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])

@@ -8,22 +8,19 @@ import yourself
 
 
 def test_package_fixture_is_synthetic(monkeypatch, fake_python_packages):
-    from importlib import metadata, util
+    from importlib import metadata
     def forbidden(*args, **kwargs):
         raise AssertionError("real package discovery attempted")
     monkeypatch.setattr(metadata, "distributions", forbidden)
-    monkeypatch.setattr(util, "find_spec", forbidden)
-    report = yourself.python_packages(listing=True)
-    assert report["count"] == 0 and report["packages"] == []
-    assert report["complete"] and report["importable"] == {"uno": False}
+    report = yourself.python_packages()
+    assert report["count"] == 0 and report["installers"] == {} and report["complete"]
 
 
 def test_package_fixture_child_is_synthetic(tmp_path, fake_package_cli):
     target = tmp_path / "synthetic child.py"
     target.write_text('''import sys
-from importlib import metadata, util
+from importlib import metadata
 assert list(metadata.distributions()) == []
-assert util.find_spec("uno") is None
 assert __name__ == "__main__"
 assert sys.argv[1:] == ["--fixture"]
 print("synthetic")
