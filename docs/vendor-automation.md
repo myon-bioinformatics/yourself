@@ -61,7 +61,7 @@ python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
 # Restore missing or mismatched locked files when restoration is intended:
 python -S .vendor-sync-tools/vendor_sync.py materialize --manifest vendor.lock.json
 python -S .vendor-sync-tools/vendor_sync.py check --manifest vendor.lock.json
-python -m pytest
+uv run pytest
 ```
 
 Offline local pytest uses checked-in copies and does not download sources.
