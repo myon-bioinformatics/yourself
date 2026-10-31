@@ -35,9 +35,12 @@ def test_counts_by_installer_and_first_name_wins():
              Dist(None), Dist(KeyError), Dist("broken", error=PermissionError), Dist("bad", error=UnicodeDecodeError(
                  "utf-8", b"\xff", 0, 1, "x"))]
     report = yourself.python_packages(distributions=dists, find_spec=found())
-    assert report["count"] == 5
-    assert report["installers"] == {"other": 1, "pip": 1, "unknown": 1, "uv": 2}
+    assert report["count"] == 7
+    assert report["installers"] == {"other": 1, "pip": 1, "unknown": 3, "uv": 2}
     assert report["packages"] is None
+    assert report["complete"] is False and report["sha256"] is None
+    assert report["errors"] == ["installer:PermissionError", "installer:UnicodeDecodeError",
+                                "metadata:KeyError", "metadata:ValueError"]
 
 
 def test_listing_is_sorted_and_digest_ignores_order():
@@ -53,18 +56,24 @@ def test_listing_is_sorted_and_digest_ignores_order():
 
 @pytest.mark.parametrize("finder, expected", [
     (found("uno"), True), (found(), False),
-    (lambda name: (_ for _ in ()).throw(ValueError("uno.__spec__ is None")), False),
-    (lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)), False)])
+    (lambda name: (_ for _ in ()).throw(ValueError("uno.__spec__ is None")), None),
+    (lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)), None)])
 def test_os_module_is_looked_up_not_imported(finder, expected):
     report = yourself.python_packages(distributions=[], find_spec=finder)
     assert report["importable"] == {"uno": expected} and report["count"] == 0
+    assert report["complete"] is (expected is not None)
+    assert bool(report["errors"]) is (expected is None)
 
 
-def test_real_interpreter_is_consistent():
+def test_injected_discovery_is_consistent(monkeypatch):
+    from importlib import metadata, util
+    monkeypatch.setattr(metadata, "distributions", lambda: iter([Dist("example", installer="uv")]))
+    monkeypatch.setattr(util, "find_spec", found("uno"))
     report = yourself.python_packages(listing=True)
-    assert report["count"] == len(report["packages"]) >= 1
+    assert report["count"] == len(report["packages"]) == 1
     assert sum(report["installers"].values()) == report["count"]
-    assert "pytest" in {item["name"].lower() for item in report["packages"]}
+    assert report["packages"] == [{"name": "example", "version": "1.0", "installer": "uv"}]
+    assert report["complete"] is True and report["errors"] == []
     assert json.loads(yourself.to_json(report)) == report
 
 
@@ -99,13 +108,97 @@ def test_cli_flag_and_minimal(monkeypatch, capsys):
         return real(listing=listing, distributions=[Dist("tidy", "1.0", "uv")],
                                         find_spec=found("uno"))
     monkeypatch.setattr(yourself, "python_packages", fake)
-    assert yourself.main(["--no-network", "--no-probes"]) in (0, 2)
+    facts = {key: value for key, value in base_facts({}).items() if key != "python_packages"}
+    monkeypatch.setattr(yourself, "diagnose", lambda **kwargs: dict(facts))
+    monkeypatch.setattr(yourself, "collect", lambda **kwargs: dict(facts))
+    monkeypatch.setattr(yourself, "session_facts", lambda: None)
+    monkeypatch.setattr(yourself, "resource_facts", lambda: None)
+    monkeypatch.setattr(yourself, "runtime_facts", lambda **kwargs: None)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("unexpected real environment probe")
+    for name in ("probe_all", "network_facts", "listener_ports", "container_facts", "hosts_facts"):
+        monkeypatch.setattr(yourself, name, forbidden)
+    assert yourself.main(["--no-network", "--no-probes"]) == 0
     out = capsys.readouterr().out
     assert "python_packages: 1 (uv 1)" in out and "package.tidy" not in out
-    assert yourself.main(["--no-network", "--no-probes", "--packages"]) in (0, 2)
+    assert yourself.main(["--no-network", "--no-probes", "--packages"]) == 0
     assert "package.tidy: 1.0 (uv)" in capsys.readouterr().out
-    assert yourself.main(["--no-network", "--no-probes", "--packages", "--format", "json"]) in (0, 2)
+    assert yourself.main(["--no-network", "--no-probes", "--packages", "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)["python_packages"]["packages"][0]["installer"] == "uv"
-    assert calls == [False, True, True]
+    assert yourself.main(["--no-network", "--no-probes", "--packages", "--format", "markdown"]) == 0
+    assert "| tidy | 1.0 | uv |" in capsys.readouterr().out
+    assert calls == [False, True, True, True]
     assert yourself.main(["--minimal"]) == 0
-    assert "python_packages" not in capsys.readouterr().out and calls == [False, True, True]
+    assert "python_packages" not in capsys.readouterr().out and calls == [False, True, True, True]
+    monkeypatch.setattr(yourself, "python_packages", lambda **kwargs: real(
+        distributions=[Dist("tidy", error=PermissionError)], find_spec=found()))
+    assert yourself.main(["--no-network", "--no-probes"]) == 2
+    assert "python_packages: 1 (unknown 1) [partial]" in capsys.readouterr().out
+
+
+def test_invalid_installer_keeps_package(tmp_path):
+    from importlib.metadata import PathDistribution
+    dist = tmp_path / "example-1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: example\nVersion: 1.0\n", encoding="utf-8")
+    (dist / "INSTALLER").write_bytes(b"\xff")
+    report = yourself.python_packages(listing=True, distributions=[PathDistribution(dist)], find_spec=found())
+    assert report["packages"] == [{"name": "example", "version": "1.0", "installer": "unknown"}]
+    assert report["count"] == 1 and report["sha256"] is None
+    assert report["errors"] == ["installer:UnicodeDecodeError"]
+
+
+def test_reader_suppressed_installer_error_is_unknown(tmp_path, monkeypatch):
+    from importlib.metadata import PathDistribution
+    from pathlib import Path
+    dist = tmp_path / "example-1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: example\nVersion: 1.0\n", encoding="utf-8")
+    original = Path.read_text
+    def read(path, *args, **kwargs):
+        if path.name == "INSTALLER":
+            raise PermissionError("synthetic denied metadata")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read)
+    report = yourself.python_packages(distributions=[PathDistribution(dist)], find_spec=found())
+    # PathDistribution suppresses this error before the probe can observe it.
+    assert report["installers"] == {"unknown": 1}
+    assert report["complete"] is True and report["errors"] == []
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_discovery_error_is_partial(monkeypatch, partial):
+    from importlib import metadata
+    def discovery():
+        if partial:
+            yield Dist("example")
+        raise PermissionError("private path must not escape")
+    monkeypatch.setattr(metadata, "distributions", discovery)
+    report = yourself.python_packages(find_spec=found())
+    assert report["count"] == int(partial)
+    assert report["complete"] is False and report["sha256"] is None
+    assert report["errors"] == ["discovery:PermissionError"]
+    assert "private path" not in yourself.to_json(report)
+
+
+def test_uno_lookup_error_is_unmeasured():
+    def finder(name):
+        raise RuntimeError("private finder message")
+    report = yourself.python_packages(distributions=[], find_spec=finder)
+    assert report["importable"]["uno"] is None and not report["complete"]
+    assert report["errors"] == ["importable.uno:RuntimeError"]
+    assert "python_importable.uno: unmeasured" in yourself.to_text(base_facts(report))
+    assert "python_importable.uno | unmeasured" in yourself.to_markdown(base_facts(report))
+    assert "private finder message" not in yourself.to_json(report)
+
+
+def test_markdown_packages_are_opt_in_and_escaped():
+    dists = [Dist("<private|project>", "1`2", "pip")]
+    hidden = yourself.python_packages(distributions=dists, find_spec=found())
+    markdown = yourself.to_markdown(base_facts(hidden))
+    assert "## Python packages" in markdown and "private" not in markdown
+    listed = yourself.python_packages(listing=True, distributions=dists, find_spec=found())
+    markdown = yourself.to_markdown(base_facts(listed))
+    assert "&lt;private&#124;project&gt;" in markdown and "1&#96;2" in markdown
+    assert "<private|project>" not in markdown
+

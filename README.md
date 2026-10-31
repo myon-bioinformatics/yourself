@@ -173,11 +173,20 @@ PATH and, with `--versions`, whether git has `merge-tree --write-tree` (2.38+).
 It also counts the Python packages installed for the interpreter that runs it, by who
 installed them (`python_packages: 167 (debian 4, unknown 11, uv 152)`; the word comes
 from each `*.dist-info/INSTALLER`: `pip`, `uv`, `conda`; `unknown` when the file is
-missing), with a digest to compare two environments. `python_importable.uno` says
+missing or unreadable), with a name/version digest to compare complete inventories.
+Errors surfaced by discovery or metadata readers are reported separately, mark the result partial, suppress an incomplete
+inventory's digest, and produce exit code 2; a bad `INSTALLER` does not discard a
+package whose name and version were read. Some metadata readers suppress filesystem
+errors and return no `INSTALLER` content; these are indistinguishable from a missing
+file and report `unknown` without a detectable error. `python_importable.uno` says
 whether LibreOffice's Python bridge (`import uno`) can be found on `sys.path`: the OS,
 not pip or uv, provides it, so a venv or uv-managed Python that lacks it reports `false`.
-Nothing is imported or run. `--packages` adds one `package.<name>: <version> (<installer>)`
-line per package. Run it under each interpreter to compare them
+Lookup errors report `null` in JSON and `unmeasured` in text/Markdown, not `false`.
+No target module is imported and no command is launched. Python's installed metadata
+and import finder hooks may execute, so they must be trusted; finding a module does
+not prove that importing it would succeed. `--packages` adds one
+`package.<name>: <version> (<installer>)` line per package in text, a package table in
+Markdown, or package objects in JSON. Run it under each interpreter to compare them
 (`python3.13 yourself.py`, `.venv/bin/python yourself.py`).
 
 ## CLI
@@ -347,3 +356,4 @@ include requested directory names and opt-in host information. Reports may
 therefore need redaction before sharing. This change affects only the advanced
 script; `yourself.py` remains a standalone standard-library module and its own
 CLI contract is unchanged.
+

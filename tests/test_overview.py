@@ -94,9 +94,9 @@ def test_wsl_detection_is_not_a_container(tmp_path):
     assert facts["in_container"] is True and facts["kinds"] == ["docker"] and facts["wsl"] == "wsl2"
 
 
-def test_no_argument_run_is_one_key_per_line(tmp_path):
+def test_no_argument_run_is_one_key_per_line(tmp_path, fake_package_cli):
     shutil.copy(ROOT / "yourself.py", tmp_path / "yourself.py")  # single file, no siblings
-    proc = subprocess.run([sys.executable, "-S", str(tmp_path / "yourself.py")], cwd=tmp_path,
+    proc = subprocess.run(fake_package_cli(tmp_path / "yourself.py"), cwd=tmp_path,
                           capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     facts = _lines(proc.stdout)
@@ -105,9 +105,9 @@ def test_no_argument_run_is_one_key_per_line(tmp_path):
     assert not (tmp_path / "__pycache__").exists()
 
 
-def test_no_network_and_minimal(tmp_path):
+def test_no_network_and_minimal(tmp_path, fake_package_cli):
     shutil.copy(ROOT / "yourself.py", tmp_path / "yourself.py")
-    run = lambda *a: subprocess.run([sys.executable, "-S", str(tmp_path / "yourself.py"), *a], cwd=tmp_path,
+    run = lambda *a: subprocess.run(fake_package_cli(tmp_path / "yourself.py", *a), cwd=tmp_path,
                                     capture_output=True, text=True, timeout=30).stdout
     assert "ipv4" not in _lines(run("--no-network")) and "tool.git" in _lines(run("--no-network"))
     minimal = set(_lines(run("--minimal")))
@@ -118,3 +118,4 @@ def test_text_escapes_control_characters():
     facts = yourself.collect()
     facts["cwd"] = "/tmp/a\nb"
     assert "cwd: /tmp/a\\u000ab" in yourself.to_text(facts)
+

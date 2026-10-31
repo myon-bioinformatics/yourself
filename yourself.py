@@ -118,6 +118,18 @@ def to_markdown(facts):
     for key in ("os_release", "workspace", "listeners"):
         if facts.get(key) is not None:
             rows.extend(["", key + ": " + _cell(facts[key])])
+    packages = facts.get("python_packages")
+    if packages is not None:
+        rows.extend(["", "## Python packages", "", "| Fact | Observed value |", "| --- | --- |"])
+        for key in ("count", "installers", "complete", "sha256", "errors"):
+            rows.append("| " + key + " | " + _cell(packages[key]) + " |")
+        for module, found in packages["importable"].items():
+            rows.append("| python_importable." + _cell(module) + " | "
+                        + _cell("unmeasured" if found is None else found) + " |")
+        if packages["packages"] is not None:
+            rows.extend(["", "| Package | Version | Installer |", "| --- | --- | --- |"])
+            for item in packages["packages"]:
+                rows.append("| " + " | ".join(_cell(item[key]) for key in ("name", "version", "installer")) + " |")
     return "\n".join(rows) + "\n"
 
 
@@ -1165,38 +1177,58 @@ def python_packages(*, listing=False, distributions=None, find_spec=None):
     """Packages installed for the running interpreter, counted by who installed them.
 
     Each ``*.dist-info/INSTALLER`` is the one-word file pip, uv, conda and others write
-    (``unknown`` when missing, e.g. OS-packaged). Nothing is imported or run: ``find_spec``
-    only searches ``sys.path``, so an OS module such as ``uno`` is reported importable or not.
+    (``unknown`` when missing, e.g. OS-packaged). No target module is imported and
+    no command is launched. Metadata discovery and ``find_spec`` consult Python's
+    installed finder hooks, which must be trusted; finding a spec does not prove
+    that importing the module would succeed. Lookup errors are not absence.
     A name seen twice on ``sys.path`` counts once (first wins, as for import). ``listing``
     adds every name/version/installer; the default keeps only counts and a digest.
     """
     from importlib import metadata, util
-    seen = {}
-    for dist in (metadata.distributions() if distributions is None else distributions):
-        try:
-            name = dist.metadata["Name"]
-            if not name:
+    seen, errors = {}, []
+    try:
+        for dist in (metadata.distributions() if distributions is None else distributions):
+            try:
+                name = dist.metadata["Name"]
+                if not isinstance(name, str) or not name:
+                    raise ValueError("missing package name")
+                key = re.sub(r"[-_.]+", "-", name).lower()
+                if key in seen:
+                    continue
+                version = dist.version or ""
+            except Exception as error:
+                # Finder implementations may fail too; preserve partial observations.
+                errors.append("metadata:" + type(error).__name__)
                 continue
-            key = re.sub(r"[-_.]+", "-", name).lower()
-            if key in seen:
-                continue
-            raw = (dist.read_text("INSTALLER") or "").strip().lower()
-            seen[key] = (name, dist.version or "", raw if re.fullmatch(r"[a-z0-9][a-z0-9._+-]{0,31}", raw)
-                         else ("other" if raw else "unknown"))
-        except (OSError, UnicodeError, KeyError):
-            continue
+            try:
+                raw = (dist.read_text("INSTALLER") or "").strip().lower()
+                installer = (raw if re.fullmatch(r"[a-z0-9][a-z0-9._+-]{0,31}", raw)
+                             else ("other" if raw else "unknown"))
+            except Exception as error:
+                errors.append("installer:" + type(error).__name__)
+                installer = "unknown"
+            seen[key] = (name, version, installer)
+    except Exception as error:
+        errors.append("discovery:" + type(error).__name__)
     rows = sorted(seen.values(), key=lambda row: row[0].lower())
     installers = {}
     for _, _, installer in rows:
         installers[installer] = installers.get(installer, 0) + 1
-    digest = hashlib.sha256("\n".join("%s==%s" % (n, v) for n, v, _ in rows).encode("utf-8")).hexdigest()
+    digest = None
+    if not errors:
+        try:
+            digest = hashlib.sha256("\n".join("%s==%s" % (n, v) for n, v, _ in rows).encode("utf-8")).hexdigest()
+        except UnicodeError as error:
+            errors.append("digest:" + type(error).__name__)
     importable = {}
     for module in _OS_MODULES:
         try:
             importable[module] = (util.find_spec if find_spec is None else find_spec)(module) is not None
-        except (ImportError, ValueError):
-            importable[module] = False
+        except Exception as error:
+            importable[module] = None
+            errors.append("importable." + module + ":" + type(error).__name__)
     return {"count": len(rows), "installers": dict(sorted(installers.items())), "sha256": digest,
+            "complete": not errors, "errors": sorted(set(errors)),
             "importable": importable,
             "packages": [{"name": n, "version": v, "installer": i} for n, v, i in rows] if listing else None}
 
@@ -1314,11 +1346,14 @@ def to_text(facts):
             put("git_merge_tree_write_tree", runtimes["git"]["merge_tree_write_tree"])
     packages = facts.get("python_packages")
     if packages is not None:
-        put("python_packages", "%d (%s)" % (packages["count"], ", ".join(
-            "%s %d" % item for item in packages["installers"].items()) or "none"))
-        put("python_packages_sha256", packages["sha256"][:16] + "...")
+        put("python_packages", "%d (%s)%s" % (packages["count"], ", ".join(
+            "%s %d" % item for item in packages["installers"].items()) or "none",
+            " [partial]" if packages["errors"] else ""))
+        put("python_packages_sha256", packages["sha256"][:16] + "..." if packages["sha256"] else "unmeasured")
+        if packages["errors"]:
+            put("python_packages_errors", ", ".join(packages["errors"]))
         for module, found in packages["importable"].items():
-            put("python_importable." + module, found)
+            put("python_importable." + module, "unmeasured" if found is None else found)
         for item in packages["packages"] or ():
             put("package." + item["name"], "%s (%s)" % (item["version"], item["installer"]))
     listeners = facts.get("listeners")
@@ -1423,6 +1458,7 @@ def main(argv=None):
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
+    partial |= bool(facts.get("python_packages", {}).get("errors"))
     partial |= any(row["status"] in ("timeout", "execution_error", "nonzero_exit",
                                     "unrecognized_version")
                    for row in facts.get("commands", []))
@@ -1431,3 +1467,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
