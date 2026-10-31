@@ -208,7 +208,7 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
-Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
+Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.15 (Linux) and 3.15 (Windows/macOS).
 
 ## Compact environment diagnosis (0.2)
 
@@ -326,8 +326,10 @@ uv run --locked pytest
 `pyproject.toml` is the canonical development dependency definition; legacy
 `tests/requirements.txt` remains for downstream callers that still use pip.
 Runtime `requires-python` does not raise the vendoring floor to the development
-floor. CI pins `actions/setup-python` v7.0.0 and `astral-sh/setup-uv` v10.3.3
-by full commit SHA and installs uv 0.13.3. Setup actions using Node 24 require
+floor. CI pins `astral-sh/setup-uv` v10.3.3 by full commit SHA, installs uv
+0.13.3 and lets uv provide the interpreter through `python-version`
+(`actions/setup-python` is not used). The default is Python 3.15; the 3.11-3.14
+matrix lanes keep checking compatibility. Setup actions using Node 24 require
 runner 2.327.1 or newer (GitHub-hosted runners satisfy this).
 
 ### Advanced report CLI error contract
