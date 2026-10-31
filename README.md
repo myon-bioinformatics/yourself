@@ -22,7 +22,7 @@ Complementary view of observation, diagnosis, and report output. The panel’s �
 
 The canonical artifact is `yourself.py`: copy it to `vendor/yourself.py` without pip or supporting modules. Like `markdown` and `ascii_artist`, it provides functions, `__all__`, and `__version__`; import is inert. A thin guarded main delegates to existing APIs. The advanced CLI remains in `scripts/yourself_cli.py`.
 
-Python target: 3.9–3.14 for the stdlib runtime; contributor tests use Python 3.11+ via uv (see [Runtime and development Python policy](#runtime-and-development-python-policy)). Runtime is standard-library only.
+Python target: 3.10–3.14 for the stdlib runtime; contributor tests use Python 3.11+ via uv (see [Runtime and development Python policy](#runtime-and-development-python-policy)). Runtime is standard-library only.
 
 ## Public API
 
@@ -208,7 +208,7 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
-Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.9–3.14 (Linux) and 3.9 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
+Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.10–3.14 (Linux) and 3.10 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
 
 ## Compact environment diagnosis (0.2)
 
@@ -289,11 +289,12 @@ Exit 2 marks invalid/partial observations; output goes to stdout only.
 ## Runtime and development Python policy
 
 The standard-library runtime (`yourself.py`, vendored copies) supports Python
-**3.9+**. `pyproject.toml` declares `requires-python = ">=3.9"` with
+**3.10+** (3.9 reached end of life in October 2025, and `platform.freedesktop_os_release`
+used by the report needs 3.10). `pyproject.toml` declares `requires-python = ">=3.10"` with
 `dependencies = []` so metadata matches the stdlib-only artifact. Contributor
 tooling is separate: `[tool.uv]` sets `environments = ["python_version >= '3.11'"]`
 and the `dev` dependency group requires Python 3.11+, so `uv sync` never targets
-3.9–3.10 even though the runtime does.
+3.10 even though the runtime does.
 
 The `runtime-compatibility` CI workflow exercises behavior with `python -S` and
 no site-packages (no pytest install). The main `CI` workflow runs locked
@@ -301,8 +302,8 @@ no site-packages (no pytest install). The main `CI` workflow runs locked
 
 ```sh
 # Stdlib runtime floor (matches CI runtime-compatibility lane)
-uv python install 3.9
-uv run --python 3.9 --no-sync python -S -m unittest discover -s tests -p test_yourself.py -v
+uv python install 3.10
+uv run --python 3.10 --no-sync python -S -m unittest discover -s tests -p test_yourself.py -v
 
 # Locked contributor tests (Python 3.11+)
 uv sync --locked --python 3.11

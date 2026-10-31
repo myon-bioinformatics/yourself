@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_only_linux_python39_uses_available_runner():
+def test_runtime_floor_is_python310_on_every_runner_os():
     # This module must remain importable during python -S unittest discovery.
     import yaml
 
@@ -13,13 +13,13 @@ def test_only_linux_python39_uses_available_runner():
         Loader=yaml.BaseLoader,
     )
     runtime = workflow['jobs']['runtime']
-    assert runtime['runs-on'] == "${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.9' && 'ubuntu-24.04' || matrix.os }}"
+    assert runtime['runs-on'] == "${{ matrix.os }}"  # setup-python has 3.10 builds for every current runner image
     assert runtime['strategy']['matrix'] == {
         'os': ['ubuntu-latest'],
-        'python': ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14'],
+        'python': ['3.10', '3.11', '3.12', '3.13', '3.14'],
         'include': [
-            {'os': 'windows-latest', 'python': '3.9'},
-            {'os': 'macos-latest', 'python': '3.9'},
+            {'os': 'windows-latest', 'python': '3.10'},
+            {'os': 'macos-latest', 'python': '3.10'},
         ],
     }
     assert workflow['permissions'] == {'contents': 'read'}
