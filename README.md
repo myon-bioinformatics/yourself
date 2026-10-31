@@ -194,8 +194,7 @@ Tests: `NODE=/path/to/node24 uv run pytest tests/test_yourself_node_entry.py` (N
 ## Tests
 
 ```sh
-python -m pip install -r tests/requirements.txt
-python -m pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
+uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
 Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.9–3.14 (Linux) and 3.9 (Windows/macOS); pytest with coverage runs on Python 3.11–3.14 (Linux) and 3.12 (Windows/macOS).
@@ -296,7 +295,7 @@ uv run --python 3.9 --no-sync python -S -m unittest discover -s tests -p test_yo
 
 # Locked contributor tests (Python 3.11+)
 uv sync --locked --python 3.11
-uv run --locked python -m pytest
+uv run --locked pytest
 ```
 
 `pyproject.toml` is the canonical development dependency definition; legacy

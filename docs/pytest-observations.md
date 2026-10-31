@@ -20,7 +20,7 @@ upstream in [xprobe #7](https://github.com/myon-bioinformatics/xprobe/pull/7).
 
 The test-only xprobe adapter, importer and LICENSE are pinned in
 `vendor.lock.json`. CI verifies and recreates their locked bytes through the
-shared vendor tool; local full-suite runs use `python -m pytest` directly with
+shared vendor tool; local full-suite runs use `uv run pytest` directly with
 checked-in copies. Missing importer fails collection rather than silently
 skipping this test. See [placement and update automation](vendor-automation.md).
 The controlled child sets an explicit rootdir, preserving `test_sample.py` in
@@ -49,7 +49,7 @@ OS/Python jobs use the adapter. The runtime `yourself.py` remains stdlib-only.
 For local runs, choose a fresh destination (existing evidence is never overwritten):
 
 ```sh
-python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/local-001.jsonl --xprobe-repository=myon-bioinformatics/yourself
+uv run pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/local-001.jsonl --xprobe-repository=myon-bioinformatics/yourself
 ```
 
 The vendored adapter is byte-for-byte upstream `scripts/xprobe_pytest.py`.
