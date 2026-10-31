@@ -170,6 +170,16 @@ browser builds with revisions (`playwright_chromium: full+shell`, `shell only
 (--only-shell)` or `full only (--no-shell)`), uv-managed interpreters, `python3.X` on
 PATH and, with `--versions`, whether git has `merge-tree --write-tree` (2.38+).
 
+It also counts the Python packages installed for the interpreter that runs it, by who
+installed them (`python_packages: 167 (debian 4, unknown 11, uv 152)`; the word comes
+from each `*.dist-info/INSTALLER`: `pip`, `uv`, `conda`; `unknown` when the file is
+missing), with a digest to compare two environments. `python_importable.uno` says
+whether LibreOffice's Python bridge (`import uno`) can be found on `sys.path`: the OS,
+not pip or uv, provides it, so a venv or uv-managed Python that lacks it reports `false`.
+Nothing is imported or run. `--packages` adds one `package.<name>: <version> (<installer>)`
+line per package. Run it under each interpreter to compare them
+(`python3.13 yourself.py`, `.venv/bin/python yourself.py`).
+
 ## CLI
 
 ```sh

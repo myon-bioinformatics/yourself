@@ -22,7 +22,7 @@ __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
            "command_inventory", "workspace_facts", "listener_ports", "diagnose",
            "network_facts", "container_facts", "probe", "probe_all", "hosts_facts", "no_proxy_covers",
            "resource_facts", "session_facts", "runner_fingerprint", "runner_fingerprint_summary",
-           "reach", "runtime_facts",
+           "reach", "runtime_facts", "python_packages",
            "main"]
 
 
@@ -1156,13 +1156,58 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
     return facts
 
 
+# Modules that package metadata cannot show because the OS, not a wheel, provides them:
+# LibreOffice's Python bridge (``import uno``; apt ``python3-uno`` or the office program dir).
+_OS_MODULES = ("uno",)
+
+
+def python_packages(*, listing=False, distributions=None, find_spec=None):
+    """Packages installed for the running interpreter, counted by who installed them.
+
+    Each ``*.dist-info/INSTALLER`` is the one-word file pip, uv, conda and others write
+    (``unknown`` when missing, e.g. OS-packaged). Nothing is imported or run: ``find_spec``
+    only searches ``sys.path``, so an OS module such as ``uno`` is reported importable or not.
+    A name seen twice on ``sys.path`` counts once (first wins, as for import). ``listing``
+    adds every name/version/installer; the default keeps only counts and a digest.
+    """
+    from importlib import metadata, util
+    seen = {}
+    for dist in (metadata.distributions() if distributions is None else distributions):
+        try:
+            name = dist.metadata["Name"]
+            if not name:
+                continue
+            key = re.sub(r"[-_.]+", "-", name).lower()
+            if key in seen:
+                continue
+            raw = (dist.read_text("INSTALLER") or "").strip().lower()
+            seen[key] = (name, dist.version or "", raw if re.fullmatch(r"[a-z0-9][a-z0-9._+-]{0,31}", raw)
+                         else ("other" if raw else "unknown"))
+        except (OSError, UnicodeError, KeyError):
+            continue
+    rows = sorted(seen.values(), key=lambda row: row[0].lower())
+    installers = {}
+    for _, _, installer in rows:
+        installers[installer] = installers.get(installer, 0) + 1
+    digest = hashlib.sha256("\n".join("%s==%s" % (n, v) for n, v, _ in rows).encode("utf-8")).hexdigest()
+    importable = {}
+    for module in _OS_MODULES:
+        try:
+            importable[module] = (util.find_spec if find_spec is None else find_spec)(module) is not None
+        except (ImportError, ValueError):
+            importable[module] = False
+    return {"count": len(rows), "installers": dict(sorted(installers.items())), "sha256": digest,
+            "importable": importable,
+            "packages": [{"name": n, "version": v, "installer": i} for n, v, i in rows] if listing else None}
+
+
 def to_text(facts):
     """One "key: value" line per fact; tools as true/false. Easy to grep and paste."""
     def clean(value):
         text = str(value).lower() if isinstance(value, bool) else str(value)
         return "".join("\\u%04x" % ord(c) if ord(c) < 32 or ord(c) == 127 else c for c in text)
     lines = []
-    put = lambda key, value: lines.append(key + ": " + clean(value))
+    put = lambda key, value: lines.append(clean(key) + ": " + clean(value))
     if facts.get("cwd"):
         put("cwd", facts["cwd"])
     session = facts.get("session")
@@ -1267,6 +1312,15 @@ def to_text(facts):
         put("path_pythons", ", ".join(runtimes["path_pythons"]) or "(none)")
         if runtimes["git"]:
             put("git_merge_tree_write_tree", runtimes["git"]["merge_tree_write_tree"])
+    packages = facts.get("python_packages")
+    if packages is not None:
+        put("python_packages", "%d (%s)" % (packages["count"], ", ".join(
+            "%s %d" % item for item in packages["installers"].items()) or "none"))
+        put("python_packages_sha256", packages["sha256"][:16] + "...")
+        for module, found in packages["importable"].items():
+            put("python_importable." + module, found)
+        for item in packages["packages"] or ():
+            put("package." + item["name"], "%s (%s)" % (item["version"], item["installer"]))
     listeners = facts.get("listeners")
     if listeners is not None:
         if not listeners.get("measured"):
@@ -1292,6 +1346,8 @@ def main(argv=None):
                         help="omit host name, addresses, routes, DNS and container hints")
     parser.add_argument("--no-probes", action="store_true",
                         help="do not run the docker / nvidia-smi probes")
+    parser.add_argument("--packages", action="store_true",
+                        help="also list every installed Python package with its version and installer")
     parser.add_argument("--reach", nargs="+", metavar="HOST",
                         help="opt-in: TCP + TLS handshake to each HOST[:PORT] (via HTTPS_PROXY unless NO_PROXY); "
                              "prints one line per host and exits 1 unless all are ok")
@@ -1363,6 +1419,7 @@ def main(argv=None):
         if not args.no_probes:
             facts["probes"] = probe_all()
         facts["runtimes"] = runtime_facts(versions=args.versions)
+        facts["python_packages"] = python_packages(listing=args.packages)
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")
     partial = bool(facts.get("workspace") and facts["workspace"]["errors"])
