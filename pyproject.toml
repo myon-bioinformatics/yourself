@@ -1,7 +1,7 @@
 [project]
 name = "yourself-dev"
 version = "0.0.0"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = []
 
 [dependency-groups]
@@ -14,3 +14,4 @@ environments = ["python_version >= '3.11'"]
 
 [tool.uv.dependency-groups]
 dev = { requires-python = ">=3.11" }
+
