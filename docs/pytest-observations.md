@@ -26,7 +26,7 @@ skipping this test. See [placement and update automation](vendor-automation.md).
 The controlled child sets an explicit rootdir, preserving `test_sample.py` in
 native node IDs and `test_sample` as the JUnit class despite `-c os.devnull`.
 
-With `YOURSELF_FAILURE_EVIDENCE` set to a fresh directory, child raw XML/native
+With `FAILURE_EVIDENCE_DIR` set to a fresh directory, child raw XML/native
 JSONL and exit status are saved before validation; compact identities and
 validated receipt are saved as soon as computed. CI uploads these separately as
 `controlled-failure-<os>-py<python>` (14 days). Reused destinations are rejected.

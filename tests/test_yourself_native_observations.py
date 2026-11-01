@@ -145,7 +145,7 @@ def test_skip(): pass''', encoding='utf-8')
          str(suite)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
     # Save available raw evidence before importer/receipt/assertion failures.
     evidence = None
-    target = os.environ.get('YOURSELF_FAILURE_EVIDENCE') if junit else None
+    target = os.environ.get('FAILURE_EVIDENCE_DIR') if junit else None
     if target:
         evidence = Path(target)
         evidence.mkdir(parents=True)

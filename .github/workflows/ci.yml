@@ -150,7 +150,7 @@ jobs:
           retention-days: 14
       - name: Test with branch coverage
         env:
-          YOURSELF_FAILURE_EVIDENCE: controlled-failure
+          FAILURE_EVIDENCE_DIR: controlled-failure
         run: python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/pytest-events.jsonl --xprobe-repository=myon-bioinformatics/yourself --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90 --junitxml=reports/junit.xml
       - name: Preserve test report (including failed tests)
         if: always()
