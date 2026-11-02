@@ -25,8 +25,8 @@
       "commit": "ca03a165db2d675513b69e6980821de193c120c9",
       "source": "xprobe.py",
       "destination": "vendor/xprobe.py",
-      "blob_sha": "b8387362ea58e45a4129a7daa00bc04df66dd0f2",
-      "sha256": "af46db5428f8ff2b2ff55ab2432207909823760949256874d35cdcd63dea9a32"
+      "blob_sha": "583d6b6ef7e27104d1409b81034f1883d86141a2",
+      "sha256": "c52a81e564e690e97779a9beca794ec5032c975f2bd0ddb88035fa4372c637b1"
     },
     {
       "repository": "myon-bioinformatics/gh_identity",
@@ -61,8 +61,8 @@
       "commit": "1116d5c4f55d25af4d21cfe9b3c88f49d3a476fa",
       "source": "py_launch.cjs",
       "destination": "vendor/py_launch.cjs",
-      "blob_sha": "006817bc813187fa45abc3e8954fde27a2b73caa",
-      "sha256": "a78fe656cde285a83501b9b19d97b9ebde6f9637919b3adb95c50eb254154536"
+      "blob_sha": "2c6cbfef3da3a9f060fb93bd61ad1a2b137cb99a",
+      "sha256": "f2f3cb721e8489dd8e4f49571da568ad6e6dce5f67501a5af25bf5b04b9746dc"
     }
   ]
 }
