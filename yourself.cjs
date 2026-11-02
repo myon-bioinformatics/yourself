@@ -1,11 +1,11 @@
 "use strict";
-/** Thin Node entry (Node 24+): runs yourself.py through the shared vendor/py_launch.cjs. */
+/** Thin Node entry (Node 26+): runs yourself.py through the shared vendor/py_launch.cjs. */
 const path = require("node:path");
 const { main } = require("./vendor/py_launch.cjs");
 
 const PY_SCRIPT = path.join(__dirname, "yourself.py");
 const PY_LAUNCH = { envVar: "YOURSELF_PYTHON", noSite: true };
-const NODE_MIN_MAJOR = 24;
+const NODE_MIN_MAJOR = 26;
 
 /** Reject Node hosts older than NODE_MIN_MAJOR. Pass a version string in tests. */
 function assertNodeFloor(version = process.versions.node) {
