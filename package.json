@@ -2,6 +2,6 @@
   "name": "yourself",
   "private": true,
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   }
 }

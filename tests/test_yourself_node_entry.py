@@ -27,16 +27,16 @@ def _node() -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
     match = re.match(r"v(\d+)", out.strip())
-    return node if match and int(match.group(1)) >= 24 else None
+    return node if match and int(match.group(1)) >= 26 else None
 
 
 NODE = _node()
-needs_node = pytest.mark.skipif(NODE is None, reason="Node 24+ not available (set NODE)")
+needs_node = pytest.mark.skipif(NODE is None, reason="Node 26+ not available (set NODE)")
 
 
 def test_ci_provisions_node_instead_of_skipping_node_parity():
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        assert NODE is not None, "CI must configure Node >=24 before pytest"
+        assert NODE is not None, "CI must configure Node >=26 before pytest"
 
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     job = workflow.split("\n  test:\n", 1)[1].split("\n  failure-identity:", 1)[0]
@@ -81,7 +81,7 @@ def test_entry_uses_shared_launcher_only():
     assert "child_process" not in text
     assert f'"{TOOL}.py"' in text
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert pkg["engines"]["node"] == ">=24"
+    assert pkg["engines"]["node"] == ">=26"
 
 
 @needs_node
@@ -123,14 +123,14 @@ def test_mutated_entry_breaks_parity(tmp_path, old, new):
 def test_node_floor_rejects_old_versions():
     script = (
         "const m = require(process.argv[1]);"
-        "const bad = ['v22.14.0', '18.0.0', 'junk'].filter((v) => { try { m.assertNodeFloor(v); return true; } catch (e) { return !/requires Node 24\\+/.test(e.message); } });"
-        "m.assertNodeFloor('v24.0.0');"
+        "const bad = ['v22.14.0', '18.0.0', 'junk'].filter((v) => { try { m.assertNodeFloor(v); return true; } catch (e) { return !/requires Node 26\\+/.test(e.message); } });"
+        "m.assertNodeFloor('v26.0.0');"
         "process.stdout.write(JSON.stringify({bad, min: m.NODE_MIN_MAJOR}));"
     )
     p = subprocess.run([NODE, "-e", script, str(ROOT / f"{TOOL}.cjs")],
                        capture_output=True, text=True, timeout=60)
     assert p.returncode == 0, p.stderr
-    assert json.loads(p.stdout) == {"bad": [], "min": 24}
+    assert json.loads(p.stdout) == {"bad": [], "min": 26}
 
 
 @needs_node
