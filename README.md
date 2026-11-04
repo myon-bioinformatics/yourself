@@ -365,4 +365,8 @@ therefore need redaction before sharing. This change affects only the advanced
 script; `yourself.py` remains a standalone standard-library module and its own
 CLI contract is unchanged.
 
+## Focused test discovery
 
+See [standard-library discovery commands](docs/unittest-discovery.md) for
+validated `python -S -m unittest discover` recipes, filename/name filtering,
+and the boundary with the full pytest suite.
