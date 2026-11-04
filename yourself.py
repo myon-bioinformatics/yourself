@@ -6,6 +6,7 @@ Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
 
+from bisect import insort
 import hashlib
 import json
 import os
@@ -44,10 +45,10 @@ def directory_summary(path, *, sample_size=10):
     with os.scandir(path) as entries:
         for entry in entries:
             # Keep only the lexicographically smallest sample, not all names.
-            if sample_size:
-                names.append(entry.name)
-                names.sort()
-                del names[sample_size:]
+            if sample_size and (len(names) < sample_size or entry.name < names[-1]):
+                insort(names, entry.name)
+                if len(names) > sample_size:
+                    names.pop()
             try:
                 if entry.is_symlink():
                     kind = "symlinks"
