@@ -33,7 +33,8 @@ def main():
                 start=time.perf_counter_ns()
                 got=sample(values,limit,name=='insertion')
                 elapsed=time.perf_counter_ns()-start
-                assert got==sorted(values)[:limit]
+                if not (got==sorted(values)[:limit]):
+                    raise SystemExit('benchmark_directory_sample: result mismatch')
                 if repeat:samples[name].append(elapsed)
         records.append({'limit':limit,'samples_ns':samples,'median_ns':{k:statistics.median(v) for k,v in samples.items()}})
     print(json.dumps({'python':sys.version,'seed':20261104,'names':10000,'records':records},indent=2))
