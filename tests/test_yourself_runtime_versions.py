@@ -31,6 +31,9 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(yourself.sys, "platform", "linux")
     monkeypatch.setattr(yourself.Path, "home", classmethod(lambda cls: home))
     monkeypatch.setitem(yourself._NODE_PREFIX_PARENTS, "linux", (str(opt),))
+    manager_dirs = yourself._node_manager_dirs
+    monkeypatch.setattr(yourself, "_node_manager_dirs", lambda env:
+                        manager_dirs({"N_PREFIX": str(tmp_path / "n"), **env}))
     return home, opt
 
 
@@ -105,6 +108,7 @@ def test_windows_prefixes_and_header_free_version(tmp_path, monkeypatch):
 
 
 def test_python_defaults_and_pyenv(tmp_path, monkeypatch):
+    monkeypatch.setattr(yourself.sys, "platform", "linux")
     root, config = tmp_path / "pyenv", tmp_path / "cfg"
     for name in ("3.12.3", "3.10.14", "miniconda3-latest", "bad name"):
         (root / "versions" / name).mkdir(parents=True)
