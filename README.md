@@ -98,6 +98,18 @@ tool.nvidia-smi: false
 Tools are `true` / `false` presence (versions only with `--versions`). Each key
 appears once.
 
+Runtimes are listed without running anything. Installed versions ("global"): `uv_pythons`,
+`path_pythons`, `pyenv_pythons`, `python_defaults` (pyenv global file, uv user-level pin) and
+`node_installs`, e.g. `22.23.4 [prefix, active], 24.22.1 [prefix]`. Node is found from the
+directory names of nvm, fnm, Volta, mise, asdf and n (and nvm-windows via `NVM_HOME`), from
+unpacked installs under `/opt/node*`, `/usr/local/lib/nodejs` or Homebrew `node@*`, and from `node` on
+PATH; `active` is what `node` resolves to, and the version comes from the `node_version.h` next to the
+binary (`?` when it cannot be read without running node, e.g. a bare `node.exe`). Versions the
+project asks for ("local"): `pin.python` and `pin.node` from `.python-version`, `.node-version`
+and `.nvmrc` (nearest of the directory and five parents, `(up N)` says how far),
+`.venv/pyvenv.cfg`, `requires-python`, `engines.node` and `.tool-versions` in the directory itself.
+Values must look like version specs (`3.12`, `>=3.10`, `lts/*`); anything else prints `(unreadable)`.
+
 It also **runs** a few fixed probes and reports each as `true …` or
 `false (reason)`; a failure is a result (the daemon may be down, the tool may be
 missing), never an error of the report:
