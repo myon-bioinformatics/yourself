@@ -1,8 +1,5 @@
+import shlex, shutil, subprocess, sys
 from pathlib import Path
-import subprocess
-import shutil
-import shlex
-import sys
 
 import pytest
 
