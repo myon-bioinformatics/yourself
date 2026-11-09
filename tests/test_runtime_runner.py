@@ -94,7 +94,9 @@ def test_setup_uv_activates_each_requested_python_without_cache():
         assert re.fullmatch(r'astral-sh/setup-uv@[0-9a-f]{40}', setup['uses'])
         assert setup['with']['python-version'] == requested
         assert setup['with']['activate-environment'] == 'true'
-        assert setup['with']['enable-cache'] == 'false'
+        assert setup['with']['enable-cache'] == 'true'
+        assert setup['with']['save-cache'] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"  # only main writes
+        assert setup['with']['prune-cache'] == 'true'
         if job_id == 'test':
             sync = next(step for step in steps
                         if step.get('name') == 'Sync locked development environment')
