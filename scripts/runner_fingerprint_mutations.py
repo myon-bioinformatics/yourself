@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Mutation checks for runner fingerprint helpers; expects zero survivors."""
-import subprocess
-import sys
-import tempfile
+import subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]

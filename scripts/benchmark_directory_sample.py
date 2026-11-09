@@ -1,10 +1,6 @@
 """Isolated directory-name sampling comparison; no host-directory observations."""
+import json, random, statistics, sys, time
 from bisect import insort
-import json
-import random
-import statistics
-import sys
-import time
 
 
 def sample(values,limit,optimized):

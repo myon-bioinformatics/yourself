@@ -1,8 +1,6 @@
 """Dependency-free behavioral checks also run under python -S."""
-import tempfile
-import unittest
-from pathlib import Path
-from unittest.mock import patch
+import tempfile, unittest
+from pathlib import Path; from unittest.mock import patch
 
 import yourself
 

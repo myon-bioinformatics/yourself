@@ -6,17 +6,8 @@ Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
 
-from bisect import insort
-import hashlib
-import json
-import os
-import platform
-import re
-import shutil
-import subprocess
-import stat
-import sys
-from pathlib import Path
+import hashlib, json, os, platform, re, shutil, stat, subprocess, sys
+from bisect import insort; from pathlib import Path
 
 __version__ = "0.6.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",

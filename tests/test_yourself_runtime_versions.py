@@ -1,6 +1,5 @@
 """Node installs and Python/Node version pins: directory names, headers and small files only."""
-import json
-import os
+import json, os
 
 import pytest
 

@@ -1,9 +1,6 @@
 """No-argument overview: key: value lines with container and network facts."""
-import json
+import json, shutil, subprocess, sys
 from pathlib import Path
-import shutil
-import subprocess
-import sys
 
 import pytest
 import yourself
