@@ -1,10 +1,6 @@
 """Stdlib-only diagnostic regression: fake observations, never real probes."""
-from contextlib import ExitStack, redirect_stdout
-import io
-import json
-from pathlib import Path
-import unittest
-from unittest.mock import patch
+import io, json, unittest
+from contextlib import ExitStack, redirect_stdout; from pathlib import Path; from unittest.mock import patch
 
 import yourself
 
@@ -32,7 +28,7 @@ class DiagnoseRuntimeTests(unittest.TestCase):
             side_effect=AssertionError('real file reads are not allowed')))
         self.workspace = stack.enter_context(patch.object(yourself, 'workspace_facts',
             return_value={'markers': [], 'storage': None, 'errors': []}))
-        for name in ('session_facts', 'resource_facts', 'runtime_facts'):
+        for name in ('session_facts', 'resource_facts', 'runtime_facts', 'version_pins'):
             stack.enter_context(patch.object(yourself, name, return_value=None))
         stack.enter_context(patch.object(yourself, 'python_packages', return_value={
             'count': 0, 'installers': {}, 'complete': True, 'errors': []}))

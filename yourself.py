@@ -6,17 +6,8 @@ Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
 
-from bisect import insort
-import hashlib
-import json
-import os
-import platform
-import re
-import shutil
-import subprocess
-import stat
-import sys
-from pathlib import Path
+import hashlib, json, os, platform, re, shutil, stat, subprocess, sys
+from bisect import insort; from pathlib import Path
 
 __version__ = "0.6.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
@@ -1119,6 +1110,222 @@ def _uv_python_dirs(environ):
     return [Path(environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "uv" / "python"]
 
 
+_VERSION_NAME = re.compile(r"v?(\d+\.\d+\.\d+)")
+_PIN_TOKEN = r"(?:[<>=!~^]{0,2}\s*v?\d[\w.*+-]*|lts/[\w*-]+|latest|system|stable|[a-z][\w.-]*\d[\w.-]*)"
+_PIN_VALUE = re.compile(_PIN_TOKEN + r"(?:(?:\s*,\s*|\s*\|\|\s*|\s+|:)" + _PIN_TOKEN + ")*")
+
+
+def _pin_ok(value):
+    """A version spec (3.12, >=3.10, lts/*, 3.12:3.11, ^20 || >=22), never free text."""
+    return len(value) <= 64 and bool(_PIN_VALUE.fullmatch(value))
+# Conventional parents of unpacked Node tarballs / versioned kegs (Windows uses fixed prefixes).
+_NODE_PREFIX_PARENTS = {"linux": ("/opt", "/usr/local/lib/nodejs"),
+                        "darwin": ("/opt/homebrew/opt", "/usr/local/opt", "/usr/local/lib/nodejs")}
+
+
+def _node_manager_dirs(environ):
+    """(manager, directory) pairs whose children are named after Node versions."""
+    home, win, mac = Path.home(), sys.platform == "win32", sys.platform == "darwin"
+    local = Path(environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+    data = Path(environ.get("XDG_DATA_HOME") or home / ".local" / "share")
+    fnm = local / "fnm" if win else home / "Library" / "Application Support" / "fnm" if mac else data / "fnm"
+    mise = local / "mise" if win else data / "mise"
+    volta = local / "Volta" if win else home / ".volta"
+    rows = [("nvm", Path(environ.get("NVM_DIR") or home / ".nvm") / "versions" / "node"),
+            ("fnm", Path(environ.get("FNM_DIR") or fnm) / "node-versions"),
+            ("volta", Path(environ.get("VOLTA_HOME") or volta) / "tools" / "image" / "node"),
+            ("mise", Path(environ.get("MISE_DATA_DIR") or mise) / "installs" / "node"),
+            ("asdf", Path(environ.get("ASDF_DATA_DIR") or home / ".asdf") / "installs" / "nodejs")]
+    if environ.get("NVM_HOME"):
+        rows.append(("nvm-windows", Path(environ["NVM_HOME"])))
+    if not win:
+        rows.append(("n", Path(environ.get("N_PREFIX") or "/usr/local") / "n" / "versions" / "node"))
+    return rows
+
+
+def _node_binary(prefix):
+    for relative in ("bin/node", "node.exe"):
+        candidate = prefix / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _node_prefixes(environ):
+    """Directories that look like an unpacked Node install (``bin/node`` or ``node.exe`` inside)."""
+    if sys.platform == "win32":
+        bases = [Path(environ[k]) / rest for k, rest in (("ProgramFiles", "nodejs"), ("LOCALAPPDATA", "Programs/nodejs"))
+                 if environ.get(k)]
+        return [base for base in bases if _node_binary(base)]
+    found = []
+    for parent in _NODE_PREFIX_PARENTS.get(sys.platform, _NODE_PREFIX_PARENTS["linux"]):
+        try:
+            children = sorted(p for p in Path(parent).iterdir() if p.name.startswith("node") and p.is_dir())
+        except OSError:
+            continue
+        found.extend(child for child in children if _node_binary(child))
+    return found
+
+
+def _read_runtime_text(path, limit, *, encoding="utf-8", errors="replace"):
+    """Read at most limit bytes from a regular file, including after path races.
+
+    Follow ordinary file symlinks (version-manager layouts use them). On POSIX,
+    nonblocking open also prevents a file replaced by a FIFO from hanging.
+    """
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        raise OSError("not a regular file")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        with os.fdopen(fd, "rb", buffering=0, closefd=False) as stream:
+            return stream.read(limit).decode(encoding, errors)
+    finally:
+        os.close(fd)
+
+
+def _node_header_version(binary):
+    """Version from the ``node_version.h`` shipped next to the binary; None without running node."""
+    real = Path(os.path.realpath(binary))
+    for prefix in (real.parent.parent, real.parent):
+        try:
+            text = _read_runtime_text(prefix / "include" / "node" / "node_version.h", 65536, encoding="ascii")
+        except OSError:
+            continue
+        parts = dict(re.findall(r"#define\s+NODE_(MAJOR|MINOR|PATCH)_VERSION\s+(\d+)", text))
+        if len(parts) == 3:
+            return ".".join(parts[k] for k in ("MAJOR", "MINOR", "PATCH"))
+    return None
+
+
+def node_installs(environ):
+    """Node installs found by directory names and headers only (node is never run).
+
+    ``source`` is the version manager, ``prefix`` (an unpacked install such as /opt/node24) or
+    ``path`` (a binary on PATH that no other source explains). ``version`` is None when it
+    cannot be read without running node. ``active`` marks what ``node`` resolves to.
+    """
+    installs = []
+    for source, root in _node_manager_dirs(environ):
+        try:
+            names = sorted(p.name for p in root.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        installs.extend({"source": source, "version": match.group(1), "path": str(root / name)}
+                        for name in names for match in [_VERSION_NAME.fullmatch(name)] if match)
+    for prefix in _node_prefixes(environ):
+        installs.append({"source": "prefix", "version": _node_header_version(_node_binary(prefix)), "path": str(prefix)})
+    on_path = []
+    for part in (environ.get("PATH") or "").split(os.pathsep):
+        candidate = Path(part) / ("node.exe" if sys.platform == "win32" else "node") if part else None
+        try:
+            if candidate and candidate.is_file() and os.access(candidate, os.X_OK):
+                on_path.append(os.path.realpath(candidate))
+        except OSError:
+            continue
+    for entry in installs:
+        root = os.path.realpath(entry["path"])
+        entry["on_path"] = any(real == root or real.startswith(root + os.sep) for real in on_path)
+        entry["active"] = bool(on_path) and (on_path[0] == root or on_path[0].startswith(root + os.sep))
+    known = [os.path.realpath(entry["path"]) for entry in installs]
+    for index, real in enumerate(on_path):
+        if not any(real == root or real.startswith(root + os.sep) for root in known):
+            known.append(real)
+            installs.append({"source": "path", "version": _node_header_version(real), "path": real,
+                             "on_path": True, "active": index == 0})
+    return installs
+
+
+def _read_pin(path):
+    """First meaningful line of a small version file; None when absent, "(unreadable)" when odd."""
+    try:
+        text = _read_runtime_text(path, 512)
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            return line if _pin_ok(line) else "(unreadable)"
+    return None
+
+
+def _python_default_pins(environ):
+    """Machine-wide Python choices: pyenv's global file and uv's user-level .python-version."""
+    home = Path.home()
+    pyenv = Path(environ.get("PYENV_ROOT") or home / ".pyenv" / ("pyenv-win" if sys.platform == "win32" else ""))
+    base = environ.get("APPDATA") if sys.platform == "win32" else (environ.get("XDG_CONFIG_HOME") or home / ".config")
+    rows = [("pyenv", _read_pin(pyenv / "version")),
+            ("uv", _read_pin(Path(base) / "uv" / ".python-version") if base else None)]
+    return [{"source": source, "value": value} for source, value in rows if value]
+
+
+def _pyenv_pythons(environ):
+    home = Path.home()
+    root = Path(environ.get("PYENV_ROOT") or home / ".pyenv" / ("pyenv-win" if sys.platform == "win32" else ""))
+    try:
+        return sorted(p.name for p in (root / "versions").iterdir()
+                      if p.is_dir() and re.fullmatch(r"[A-Za-z0-9._@+-]{1,64}", p.name))
+    except OSError:
+        return []
+
+
+def version_pins(directory):
+    """Versions the project near ``directory`` asks for, read from small files (nothing is run).
+
+    ``.python-version``, ``.node-version`` and ``.nvmrc`` count from the nearest of six levels
+    up (``up`` says how far); ``.venv/pyvenv.cfg``, ``pyproject.toml`` ``requires-python``,
+    ``package.json`` ``engines.node`` and ``.tool-versions`` are read in ``directory`` only.
+    """
+    start = Path(directory).absolute()
+    pins = {"python": [], "node": []}
+    for name, runtime in ((".python-version", "python"), (".node-version", "node"), (".nvmrc", "node")):
+        for up, folder in enumerate([start, *start.parents][:6]):
+            value = _read_pin(folder / name)
+            if value:
+                pins[runtime].append({"source": name, "value": value, "up": up})
+                break
+    try:
+        for line in _read_runtime_text(start / ".venv" / "pyvenv.cfg", 4096).splitlines():
+            key, _, value = line.partition("=")
+            match = re.match(r"\d+\.\d+(?:\.\d+)?", value.strip())
+            if key.strip() in ("version", "version_info") and match:
+                pins["python"].append({"source": ".venv/pyvenv.cfg", "value": match.group(0), "up": 0})
+                break
+    except OSError:
+        pass
+    try:
+        section = None
+        for line in _read_runtime_text(start / "pyproject.toml", 262144).splitlines():
+            text = line.strip()
+            if text.startswith("["):
+                section = text
+            match = re.fullmatch(r"requires-python\s*=\s*[\"']([^\"']{1,64})[\"']", text)
+            if section == "[project]" and match and _pin_ok(match.group(1)):
+                pins["python"].append({"source": "pyproject.toml requires-python", "value": match.group(1), "up": 0})
+                break
+    except OSError:
+        pass
+    try:
+        package = start / "package.json"
+        text = _read_runtime_text(package, 262144, errors="strict")
+        engines = json.loads(text)["engines"] if len(text.encode("utf-8")) < 262144 else {}
+        value = engines.get("node") if isinstance(engines, dict) else None
+        if isinstance(value, str) and _pin_ok(value):
+            pins["node"].append({"source": "package.json engines.node", "value": value, "up": 0})
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        for line in _read_runtime_text(start / ".tool-versions", 4096).splitlines():
+            fields = line.split("#", 1)[0].split()
+            runtime = {"python": "python", "nodejs": "node", "node": "node"}.get(fields[0]) if len(fields) >= 2 else None
+            if runtime and _pin_ok(fields[1]):
+                pins[runtime].append({"source": ".tool-versions", "value": fields[1], "up": 0})
+    except OSError:
+        pass
+    return pins
+
+
 def runtime_facts(*, environ=None, versions=False, timeout=2):
     """Installed runtimes from directory names only (nothing is run unless ``versions``).
 
@@ -1127,11 +1334,16 @@ def runtime_facts(*, environ=None, versions=False, timeout=2):
       can tell whether ``--only-shell`` / ``--no-shell`` matches what is present;
     * uv-managed interpreters (``UV_PYTHON_INSTALL_DIR`` or uv's default);
     * ``python3.X`` executables on PATH (3.8-3.15);
+    * pyenv's installed versions and the machine-wide Python choices (pyenv global, uv user pin);
+    * Node installs (``node_installs``): version managers, unpacked installs such as /opt/node24,
+      and PATH, with versions from directory names or ``node_version.h``;
     * with ``versions``: git's version and whether it has
       ``git merge-tree --write-tree`` (2.38+).
     """
     environ = os.environ if environ is None else environ
-    facts = {"playwright": {"path": None, "builds": []}, "uv_pythons": [], "path_pythons": [], "git": None}
+    facts = {"playwright": {"path": None, "builds": []}, "uv_pythons": [], "path_pythons": [], "git": None,
+             "pyenv_pythons": _pyenv_pythons(environ), "python_defaults": _python_default_pins(environ),
+             "node_installs": node_installs(environ)}
     for directory in _playwright_dirs(environ):
         try:
             names = sorted(p.name for p in directory.iterdir() if p.is_dir())
@@ -1312,8 +1524,19 @@ def to_text(facts):
                 else "shell only (--only-shell)" if "chromium_headless_shell" in names else "none")
         put("uv_pythons", ", ".join(p["version"] for p in runtimes["uv_pythons"]) or "(none)")
         put("path_pythons", ", ".join(runtimes["path_pythons"]) or "(none)")
+        if runtimes.get("pyenv_pythons"):
+            put("pyenv_pythons", ", ".join(runtimes["pyenv_pythons"]))
+        if runtimes.get("python_defaults") is not None:
+            put("python_defaults", ", ".join("%(source)s=%(value)s" % d for d in runtimes["python_defaults"]) or "(none)")
+        if runtimes.get("node_installs") is not None:
+            put("node_installs", ", ".join(
+                "%s [%s%s]" % (n["version"] or "?", n["source"], ", active" if n["active"] else ", on PATH" if n["on_path"] else "")
+                for n in runtimes["node_installs"]) or "(none)")
         if runtimes["git"]:
             put("git_merge_tree_write_tree", runtimes["git"]["merge_tree_write_tree"])
+    for runtime, pins in sorted((facts.get("pins") or {}).items()):
+        put("pin." + runtime, ", ".join("%s=%s%s" % (d["source"], d["value"], " (up %d)" % d["up"] if d["up"] else "")
+                                         for d in pins) or "(none)")
     packages = facts.get("python_packages")
     if packages is not None:
         put("python_packages", "%d (%s)%s" % (packages["count"], ", ".join(
@@ -1417,6 +1640,7 @@ def main(argv=None):
         if not args.no_probes:
             facts["probes"] = probe_all()
         facts["runtimes"] = runtime_facts(versions=args.versions)
+        facts["pins"] = version_pins(args.directory)
         facts["python_packages"] = python_packages()
     render = {"json": to_json, "markdown": to_markdown, "text": to_text}[args.format]
     print(render(facts), end="")

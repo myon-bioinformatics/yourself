@@ -1,9 +1,5 @@
 """Thin report CLI; optional fixed version observations, no project-content reads."""
-import argparse
-import json
-import os
-import stat
-import sys
+import argparse, json, os, stat, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
