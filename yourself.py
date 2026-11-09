@@ -6,17 +6,8 @@ Fixed version commands are available only through explicit opt-in diagnostics.
 Import is inert. Directory observations are shallow and explicitly requested.
 """
 
-from bisect import insort
-import hashlib
-import json
-import os
-import platform
-import re
-import shutil
-import subprocess
-import stat
-import sys
-from pathlib import Path
+import hashlib, json, os, platform, re, shutil, stat, subprocess, sys
+from bisect import insort; from pathlib import Path
 
 __version__ = "0.6.0"
 __all__ = ["collect", "directory_summary", "to_json", "to_markdown", "to_text",
@@ -1176,12 +1167,30 @@ def _node_prefixes(environ):
     return found
 
 
+def _read_runtime_text(path, limit, *, encoding="utf-8", errors="replace"):
+    """Read at most limit bytes from a regular file, including after path races.
+
+    Follow ordinary file symlinks (version-manager layouts use them). On POSIX,
+    nonblocking open also prevents a file replaced by a FIFO from hanging.
+    """
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        raise OSError("not a regular file")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        with os.fdopen(fd, "rb", buffering=0, closefd=False) as stream:
+            return stream.read(limit).decode(encoding, errors)
+    finally:
+        os.close(fd)
+
+
 def _node_header_version(binary):
     """Version from the ``node_version.h`` shipped next to the binary; None without running node."""
     real = Path(os.path.realpath(binary))
     for prefix in (real.parent.parent, real.parent):
         try:
-            text = (prefix / "include" / "node" / "node_version.h").read_text(encoding="ascii", errors="replace")
+            text = _read_runtime_text(prefix / "include" / "node" / "node_version.h", 65536, encoding="ascii")
         except OSError:
             continue
         parts = dict(re.findall(r"#define\s+NODE_(MAJOR|MINOR|PATCH)_VERSION\s+(\d+)", text))
@@ -1231,10 +1240,7 @@ def node_installs(environ):
 def _read_pin(path):
     """First meaningful line of a small version file; None when absent, "(unreadable)" when odd."""
     try:
-        if not os.path.isfile(path):
-            return None
-        with open(path, encoding="utf-8", errors="replace") as stream:
-            text = stream.read(512)
+        text = _read_runtime_text(path, 512)
     except OSError:
         return None
     for line in text.splitlines():
@@ -1280,7 +1286,7 @@ def version_pins(directory):
                 pins[runtime].append({"source": name, "value": value, "up": up})
                 break
     try:
-        for line in (start / ".venv" / "pyvenv.cfg").read_text(encoding="utf-8", errors="replace")[:4096].splitlines():
+        for line in _read_runtime_text(start / ".venv" / "pyvenv.cfg", 4096).splitlines():
             key, _, value = line.partition("=")
             match = re.match(r"\d+\.\d+(?:\.\d+)?", value.strip())
             if key.strip() in ("version", "version_info") and match:
@@ -1290,7 +1296,7 @@ def version_pins(directory):
         pass
     try:
         section = None
-        for line in (start / "pyproject.toml").read_text(encoding="utf-8", errors="replace")[:262144].splitlines():
+        for line in _read_runtime_text(start / "pyproject.toml", 262144).splitlines():
             text = line.strip()
             if text.startswith("["):
                 section = text
@@ -1302,14 +1308,15 @@ def version_pins(directory):
         pass
     try:
         package = start / "package.json"
-        engines = json.loads(package.read_text(encoding="utf-8"))["engines"] if package.stat().st_size < 262144 else {}
+        text = _read_runtime_text(package, 262144, errors="strict")
+        engines = json.loads(text)["engines"] if len(text.encode("utf-8")) < 262144 else {}
         value = engines.get("node") if isinstance(engines, dict) else None
         if isinstance(value, str) and _pin_ok(value):
             pins["node"].append({"source": "package.json engines.node", "value": value, "up": 0})
     except (OSError, ValueError, KeyError, TypeError):
         pass
     try:
-        for line in (start / ".tool-versions").read_text(encoding="utf-8", errors="replace")[:4096].splitlines():
+        for line in _read_runtime_text(start / ".tool-versions", 4096).splitlines():
             fields = line.split("#", 1)[0].split()
             runtime = {"python": "python", "nodejs": "node", "node": "node"}.get(fields[0]) if len(fields) >= 2 else None
             if runtime and _pin_ok(fields[1]):

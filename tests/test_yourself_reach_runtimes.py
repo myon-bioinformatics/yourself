@@ -1,8 +1,5 @@
 """reach (opt-in TLS reachability through a CONNECT proxy) and runtime_facts (directory names only)."""
-import json
-import socket
-import ssl
-import threading
+import json, socket, ssl, threading
 
 import pytest
 

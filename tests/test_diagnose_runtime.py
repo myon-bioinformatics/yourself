@@ -1,10 +1,6 @@
 """Stdlib-only diagnostic regression: fake observations, never real probes."""
-from contextlib import ExitStack, redirect_stdout
-import io
-import json
-from pathlib import Path
-import unittest
-from unittest.mock import patch
+import io, json, unittest
+from contextlib import ExitStack, redirect_stdout; from pathlib import Path; from unittest.mock import patch
 
 import yourself
 
