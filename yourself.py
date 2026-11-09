@@ -1560,6 +1560,7 @@ def main(argv=None):
     """Direct single-file entry point; no-argument use observes current workspace."""
     import argparse
     parser = argparse.ArgumentParser(description="Read-only AI environment introduction")
+    parser.suggest_on_error = True  # 🤔 argparse 3.14+: "maybe you meant" for choices; older Pythons ignore it
     parser.add_argument("--directory", default=".")
     parser.add_argument("--format", choices=("text", "markdown", "json"), default="text")
     parser.add_argument("--versions", action="store_true")
