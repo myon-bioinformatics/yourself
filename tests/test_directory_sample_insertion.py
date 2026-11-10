@@ -1,6 +1,5 @@
 import random
-from types import SimpleNamespace
-from unittest.mock import patch
+from types import SimpleNamespace; from unittest.mock import patch
 import yourself
 
 
