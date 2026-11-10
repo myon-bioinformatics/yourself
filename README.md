@@ -203,13 +203,13 @@ python scripts/yourself_cli.py --include-host
 
 Outputs only to stdout; error diagnostics go to stderr. Exit code 0 = successful observations, 2 = invalid input or directory errors. No report file is written automatically.
 
-## Running from Node.js (`yourself.cjs`)
+## Running from Node.js (`vendor/py_launch.cjs`)
 
-On Node 26+, `node yourself.cjs [args...]` runs `yourself.py` with the same arguments, stdout/stderr and exit code. It only launches Python through the parent repository `myon-bioinformatics`'s shared launcher `vendor/py_launch.cjs` (locked in `vendor.lock.json`); it never launches Node from Node and does not use `shell: true`. Set `YOURSELF_PYTHON` to choose the interpreter. Older Node exits 1 with a one-line `yourself.cjs requires Node 26+` message; if no Python can be launched, it exits 2.
+On Node 26+, `node vendor/py_launch.cjs --env-var YOURSELF_PYTHON -- yourself.py [args...]` runs `yourself.py` with the same arguments, stdout/stderr and exit code. There is no per-tool wrapper: the parent repository `myon-bioinformatics`'s shared launcher (locked in `vendor.lock.json`) is called directly. It never launches Node from Node and does not use `shell: true`. `YOURSELF_PYTHON` chooses the interpreter (without `--env-var` the launcher uses `PYTHON`, then `python3`, `python`). Python runs with `-S`, as `yourself.py` needs no site-packages. A Node older than 26 or a Python that cannot be launched exits 2 with a one-line message.
 
 ```bash
-node yourself.cjs --minimal --no-network --no-probes --format json
-YOURSELF_PYTHON=/usr/bin/python3 node yourself.cjs --help
+node vendor/py_launch.cjs --env-var YOURSELF_PYTHON -- yourself.py --minimal --no-network --no-probes --format json
+YOURSELF_PYTHON=/usr/bin/python3 node vendor/py_launch.cjs --env-var YOURSELF_PYTHON -- yourself.py --help
 ```
 
 Tests: `NODE=/path/to/node26 uv run pytest tests/test_yourself_node_entry.py` (Node tests are skipped when Node 26+ is not found).
