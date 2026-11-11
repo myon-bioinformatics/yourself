@@ -1,0 +1,120 @@
+{
+  "schema": "web-ui-page/1",
+  "title": "yourself 利用ガイド",
+  "theme": "auto",
+  "description": "ホスト・OS・ランタイムの事実を読み取り専用で観測し、トラブル対応や AI への文脈として貼れる形で出します。",
+  "icon": "./icon.png",
+  "favicon": "./favicon.png",
+  "blocks": [
+    {
+      "type": "badges",
+      "items": [
+        "📄 単一ファイル",
+        "🧰 標準ライブラリのみ",
+        "🐍 Python 3.11+",
+        "👀 読み取り専用"
+      ]
+    },
+    {
+      "type": "section",
+      "title": "📥 取得",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "1 ファイルを置くだけで動きます（pip 不要）。"
+        },
+        {
+          "type": "output",
+          "text": "curl -fsSLO https://raw.githubusercontent.com/myon-bioinformatics/yourself/main/yourself.py"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "▶️ 実行",
+      "blocks": [
+        {
+          "type": "card",
+          "title": "🖥️ 環境をひと目で",
+          "text": "引数なしで、OS・Python・ツール・ディスク・ネットワークを 1 行ずつ出します。",
+          "blocks": [
+            {
+              "type": "output",
+              "text": "$ python yourself.py"
+            }
+          ]
+        },
+        {
+          "type": "card",
+          "title": "🤏 最小",
+          "text": "OS とランタイムだけ。",
+          "blocks": [
+            {
+              "type": "output",
+              "text": "$ python yourself.py --minimal\nos: Linux 6.18.44-fc-v378 x86_64\npython: CPython 3.13.18 64bit"
+            }
+          ]
+        },
+        {
+          "type": "card",
+          "title": "🧾 形式を選ぶ",
+          "text": "text / markdown / json。",
+          "blocks": [
+            {
+              "type": "output",
+              "text": "$ python yourself.py --format json --minimal\n{\n  \"directory\": null,\n  \"host\": null,\n  \"os\": {\n    \"machine\": \"x86_64\",\n…"
+            }
+          ]
+        },
+        {
+          "type": "card",
+          "title": "🙈 ネットワークを省く",
+          "text": "ホスト名・アドレス・経路・DNS を出しません。",
+          "blocks": [
+            {
+              "type": "output",
+              "text": "$ python yourself.py --no-network"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "🐍 Python から呼ぶ",
+      "blocks": [
+        {
+          "type": "output",
+          "text": "python -c 'import yourself; print(yourself.collect())'"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "🔗 リンク",
+      "blocks": [
+        {
+          "type": "links",
+          "items": [
+            {
+              "label": "📦 リポジトリ",
+              "href": "https://github.com/myon-bioinformatics/yourself"
+            },
+            {
+              "label": "📖 README",
+              "href": "https://github.com/myon-bioinformatics/yourself#readme"
+            },
+            {
+              "label": "📄 yourself.py",
+              "href": "https://github.com/myon-bioinformatics/yourself/blob/main/yourself.py"
+            },
+            {
+              "label": "📐 設計",
+              "href": "https://github.com/myon-bioinformatics/yourself/blob/main/docs/design.md"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

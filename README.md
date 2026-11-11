@@ -4,6 +4,8 @@
 
 Single-file, standard-library Python tool for read-only inspection of host, OS, and runtime facts. Produces concise, copyable environment reports for troubleshooting and AI context.
 
+📘 [利用ガイド / Usage guide](https://myon-bioinformatics.github.io/yourself/) (GitHub Pages)
+
 ## Concept overview
 
 ![Host and optional directory facts pass through read-only collection and diagnosis to text, Markdown, or JSON reports.](docs/images/yourself-concept.png)
