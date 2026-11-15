@@ -1,8 +1,6 @@
 version = 1
 revision = 5
 requires-python = ">=3.11"
-supported-markers = [
-]
 
 [[package]]
 name = "colorama"
@@ -336,6 +334,10 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
 ]
+stdlib-test = [
+    { name = "pytest" },
+    { name = "pyyaml" },
+]
 
 [package.group-requires-python]
 dev = ">=3.11"
@@ -347,4 +349,8 @@ dev = [
     { name = "pytest", marker = "python_full_version >= '3.11'", specifier = ">=8" },
     { name = "pytest-cov", marker = "python_full_version >= '3.11'", specifier = ">=5" },
     { name = "pyyaml", marker = "python_full_version >= '3.11'", specifier = ">=6" },
+]
+stdlib-test = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
