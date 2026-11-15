@@ -222,6 +222,16 @@ Tests: `NODE=/path/to/node26 uv run pytest tests/test_fleet.py` (Node tests are 
 uv run pytest --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90
 ```
 
+| File | Purpose |
+| --- | --- |
+| `tests/test_core.py` | `collect`, `directory_summary`, `to_json` / `to_markdown`, `diagnose`, `command_inventory`, `workspace_facts`, `listener_ports`; its `unittest` classes are the `python -S` lane |
+| `tests/test_cli.py` | `python yourself.py` (also as a copied single file) and `scripts/yourself_cli.py` |
+| `tests/test_host.py` | network, container / WSL, resources, session, listeners, probes, hosts / loopback, `--reach` |
+| `tests/test_runtimes.py` | Node installs, version pins, bounded metadata reads, `runtime_facts`, Python package counts |
+| `tests/test_runner_fingerprint.py` | `--runner-env` (mutation-checked by `scripts/runner_fingerprint_mutations.py`) |
+| `tests/test_workflows.py` | CI workflows, vendor lock and native pytest evidence |
+| `tests/test_fleet.py` | shared fleet contracts through `vendor/fleet_check.py` |
+
 Tests cover host opt-in, no content reads, shallow counts/sorted sample bounds, symlinks, entry/root errors, Unicode/control-safe reports, JSON round-trip, CLI execution from another directory and independent vendoring. CI runs the stdlib runtime lane on Python 3.11–3.14 (Linux) and 3.11 (Windows/macOS); pytest with coverage runs on Python 3.11–3.15 (Linux) and 3.15 (Windows/macOS).
 
 ## Compact environment diagnosis (0.2)
@@ -328,9 +338,7 @@ The regression rejects tool execution and real file reads. The main `CI` workflo
 ```sh
 # Stdlib runtime floor (matches CI runtime-compatibility lane)
 uv python install 3.11
-uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_yourself.py -v
-uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_workspace_runtime.py -v
-uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_diagnose_runtime.py -v
+uv run --python 3.11 --no-sync python -S -m unittest discover -s tests -p test_core.py -v
 
 # Locked contributor tests (Python 3.11+)
 uv sync --locked --python 3.11
