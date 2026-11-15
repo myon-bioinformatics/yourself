@@ -345,8 +345,7 @@ uv sync --locked --python 3.11
 uv run --locked pytest
 ```
 
-`pyproject.toml` is the canonical development dependency definition; legacy
-`tests/requirements.txt` remains for downstream callers that still use pip.
+`pyproject.toml` is the only development dependency definition (`dev` group).
 Runtime `requires-python` does not raise the vendoring floor to the development
 floor. CI pins `astral-sh/setup-uv` v10.3.3 by full commit SHA, installs the latest uv
 and lets uv provide the interpreter through `python-version`
