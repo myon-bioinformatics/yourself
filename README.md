@@ -214,7 +214,7 @@ node vendor/py_launch.cjs --env-var YOURSELF_PYTHON -- yourself.py --minimal --n
 YOURSELF_PYTHON=/usr/bin/python3 node vendor/py_launch.cjs --env-var YOURSELF_PYTHON -- yourself.py --help
 ```
 
-Tests: `NODE=/path/to/node26 uv run pytest tests/test_yourself_node_entry.py` (Node tests are skipped when Node 26+ is not found).
+Tests: `NODE=/path/to/node26 uv run pytest tests/test_fleet.py` (Node tests are skipped when Node 26+ is not found).
 
 ## Tests
 
