@@ -11,7 +11,7 @@ PARENT_WORKFLOW_PIN = "9e3da7ae1846e9604ebc24bb5178f7de094a4e77"
 ACCEPTED = {
     "vendor/xprobe.py": "1ffbb7b984075c683690bbe4e9deb06199cdfe94",
     "vendor/py_launch.cjs": "384f5dd532076062f7833038764e9a62322c387c",
-    "vendor/fleet_check.py": "37d19845379f105c388bd81efe8c33378c72c34b",
+    "vendor/fleet_check.py": "45ed741f7e1f60179934cee6fa1e16a887f97cb0",
 }
 TOOL, ENV_VAR = "yourself.py", "YOURSELF_PYTHON"
 CASES = {
