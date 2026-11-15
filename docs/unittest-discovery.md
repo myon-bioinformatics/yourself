@@ -6,15 +6,19 @@ package or browser installation. `-S` disables automatic `site` initialization
 and its usual site-packages path additions; it is not a complete isolation boundary.
 
 ```sh
-python -S -m unittest discover -s tests -p test_diagnose_runtime.py -v
+python -S -m unittest discover -s tests -p test_core.py -v
 ```
 
-Validated on Linux / CPython 3.12.14: **4 tests, exit 0** (2026-11-03).
+Validated on Linux / CPython 3.13.18: **16 tests, exit 0** (2026-11-15).
+`tests/test_core.py` is the one file the `runtime-compatibility` lane runs: its
+`unittest.TestCase` classes need only the standard library, and its pytest-style
+tests stay for the full pytest suite.
 
-To narrow the first command to a test name, use the built-in `-k` filter:
+To narrow the first command to a class or test name, use the built-in `-k` filter:
 
 ```sh
-python -S -m unittest discover -s tests -p test_diagnose_runtime.py -v -k test_linux_diagnose_reads_only_mocked_release_fields
+python -S -m unittest discover -s tests -p test_core.py -v -k DiagnoseRuntimeTests
+python -S -m unittest discover -s tests -p test_core.py -v -k test_linux_diagnose_reads_only_mocked_release_fields
 ```
 
 `-s` is the discovery start directory, `-p` matches test filenames, `-k`
