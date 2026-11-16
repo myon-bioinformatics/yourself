@@ -48,10 +48,12 @@ def test_benchmark_parity_in_both_interpreter_modes(optimized, mismatch):
 
 
 def test_ci_provisions_node_before_tests():
-    job = fleet.workflow_job(ROOT, "test")
-    assert "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1" in job
-    assert "node-version: '26'" in job
-    assert job.index("actions/setup-node@") < job.index("name: Test with branch coverage")
+    job = fleet.workflow_job(ROOT, "test", node_floor=26)
+    assert job.index("actions/setup-node@") < job.index("node_major=") < job.index("name: Test with branch coverage")
+
+
+def test_workflow_actions_are_pinned_by_full_sha_with_version():
+    assert fleet.check_actions(ROOT)
 
 
 def test_no_per_tool_wrapper_and_readme_documents_the_direct_command():

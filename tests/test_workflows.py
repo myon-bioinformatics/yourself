@@ -83,7 +83,6 @@ def test_setup_uv_activates_each_requested_python_without_cache():
             "save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",  # only main writes
             'prune-cache: true'))
         assert 'actions/setup-python@' not in job
-        assert re.search(r'uses: astral-sh/setup-uv@[0-9a-f]{40} ', job)
         if job_id == 'test':
             sync = next(step for step in _workflow(filename)['jobs'][job_id]['steps']
                         if step.get('name') == 'Sync locked development environment')
