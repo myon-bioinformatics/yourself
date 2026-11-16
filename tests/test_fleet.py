@@ -1,5 +1,6 @@
 """Fleet contracts through the parent's shared checks (vendor/fleet_check.py): locks, pins, benchmark, Node entry."""
 import json
+import os
 
 import pytest
 
@@ -48,7 +49,8 @@ def test_benchmark_parity_in_both_interpreter_modes(optimized, mismatch):
 
 
 def test_ci_provisions_node_before_tests():
-    job = fleet.workflow_job(ROOT, "test", node_floor=26)
+    # The guard is run in bash; on Windows a bare "bash" is the WSL launcher, so that lane checks the step order only.
+    job = fleet.workflow_job(ROOT, "test", node_floor=None if os.name == "nt" else 26)
     assert job.index("actions/setup-node@") < job.index("node_major=") < job.index("name: Test with branch coverage")
 
 
