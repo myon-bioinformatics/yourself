@@ -1,6 +1,6 @@
 """CI workflow, vendor lock and native pytest evidence contracts."""
 
-import hashlib, json, os, re, shlex, shutil, subprocess, sys, tempfile, unittest
+import json, os, re, shlex, shutil, subprocess, sys
 from pathlib import Path
 
 import pytest
@@ -42,9 +42,8 @@ def test_runtime_floor_is_python311_on_every_runner_os():
 def test_runtime_and_lock_metadata_share_the_supported_floor():
     import tomllib
 
+    assert fleet.python_floor(ROOT) == ('3.11', ['3.11', '3.12', '3.13', '3.14'])
     project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-    lock = tomllib.loads((ROOT / 'uv.lock').read_text(encoding='utf-8'))
-    assert project['project']['requires-python'] == lock['requires-python'] == '>=3.11'
     assert project['project']['dependencies'] == []
     assert project['tool']['uv']['dependency-groups']['dev']['requires-python'] == '>=3.11'
 
@@ -79,22 +78,13 @@ def test_setup_uv_activates_each_requested_python_without_cache():
         ('ci.yml', 'test', '${{ matrix.python }}'),
         ('runtime-compatibility.yml', 'runtime', '${{ matrix.python }}'),
     ]:
-        workflow = _workflow(filename)
-        steps = workflow['jobs'][job_id]['steps']
-        actions = [step.get('uses', '') for step in steps]
-        assert not any(action.startswith('actions/setup-python@') for action in actions)
-        setups = [step for step in steps
-                  if step.get('uses', '').startswith('astral-sh/setup-uv@')]
-        assert len(setups) == 1
-        setup = setups[0]
-        assert re.fullmatch(r'astral-sh/setup-uv@[0-9a-f]{40}', setup['uses'])
-        assert setup['with']['python-version'] == requested
-        assert setup['with']['activate-environment'] == 'true'
-        assert setup['with']['enable-cache'] == 'true'
-        assert setup['with']['save-cache'] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"  # only main writes
-        assert setup['with']['prune-cache'] == 'true'
+        job = fleet.workflow_job(ROOT, job_id, filename, setup='astral-sh/setup-uv@', inputs=(
+            f'python-version: "{requested}"', 'activate-environment: true', 'enable-cache: true',
+            "save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",  # only main writes
+            'prune-cache: true'))
+        assert 'actions/setup-python@' not in job
         if job_id == 'test':
-            sync = next(step for step in steps
+            sync = next(step for step in _workflow(filename)['jobs'][job_id]['steps']
                         if step.get('name') == 'Sync locked development environment')
             assert sync['run'].strip() == 'uv sync --locked'
 
@@ -130,106 +120,23 @@ def test_failed_vendor_operation_does_not_execute_check(tmp_path):
 
 # ── canonical vendor evidence staging against real locked bytes ───────────────────────────────
 
-class VendorStagingTests(unittest.TestCase):
-    def test_workflow_payload_and_fail_closed(self):
-        tool = ROOT / '.vendor-sync-tools/vendor_stage.py'
-        if not tool.is_file():
-            self.skipTest('requires the workflow full-SHA parent checkout')
-        commands = []
-        for workflow in (ROOT / '.github/workflows').glob('*.yml'):
-            text = workflow.read_text(encoding='utf-8')
-            for match in re.finditer(r'(?m)^( +)- name: Stage canonical vendor evidence\n', text):
-                indent = match[1]
-                tail = text[match.end():]
-                block = re.split(r'\n' + indent + r'- ', tail, maxsplit=1)[0] + '\n'
-                self.assertIn('if: always()', block)
-                self.assertNotIn('continue-on-error', block)
-                run = re.search(r'(?m)^' + indent + r'  run: >-\n((?:' + indent + r'    [^\n]*\n)+)', block)
-                self.assertIsNotNone(run)
-                command = ' '.join(line.strip() for line in run[1].splitlines())
-                self.assertNotIn('--promotion-receipt', command)
-                output = shlex.split(command)[shlex.split(command).index('--output') + 1]
-                upload = re.split(r'\n' + indent + r'- ', tail, maxsplit=1)[1]
-                self.assertIn('path: ' + output, upload.split('retention-days:', 1)[0])
-                commands.append(command)
-        self.assertTrue(commands)
-        for command in commands:
-            kinds = (shlex.split(command)[shlex.split(command).index('--kind') + 1],)
-            for kind in kinds:
-                for receipt in (False, True):
-                    with self.subTest(command=command, kind=kind, receipt=receipt), tempfile.TemporaryDirectory() as directory:
-                        root = Path(directory)
-                        args = shlex.split(command.replace('$VENDOR_EVIDENCE_KIND', kind))
-                        args[0] = sys.executable
-                        args[2] = str(tool)
-                        manifest = args[args.index('--manifest') + 1]
-                        lock = json.loads((ROOT / manifest).read_text(encoding='utf-8'))
-                        for entry in lock['files']:
-                            dest = root / entry['destination']
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copyfile(ROOT / entry['destination'], dest)
-                        # A newly enrolled member must be included without a workflow edit.
-                        data = b'extra reviewed fixture\n'
-                        extra = dict(lock['files'][0], destination='extra/LICENSE',
-                                     blob_sha=hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
-                                     sha256=hashlib.sha256(data).hexdigest())
-                        lock['files'].append(extra)
-                        (root / 'extra').mkdir()
-                        (root / 'extra/LICENSE').write_bytes(data)
-                        (root / manifest).parent.mkdir(parents=True, exist_ok=True)
-                        (root / manifest).write_text(json.dumps(lock), encoding='utf-8')
-                        legacy = [args[i + 1] for i, value in enumerate(args) if value == '--legacy-evidence']
-                        runtime = [args[i + 1] for i, value in enumerate(args) if value == '--runtime-evidence']
-                        for member in legacy:
-                            (root / member).parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copyfile(ROOT / member, root / member)
-                        for member in runtime:
-                            (root / member).write_text('{}', encoding='utf-8')
-                        if receipt:
-                            (root / 'vendor-promotion.json').write_text('{}', encoding='utf-8')
-                        result = subprocess.run(args, cwd=root, capture_output=True, text=True)
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        output = root / args[args.index('--output') + 1]
-                        evidence = json.loads((output / 'vendor-evidence.json').read_text(encoding='utf-8'))
-                        expected = {manifest, *(e['destination'] for e in lock['files'])}
-                        self.assertEqual(set(evidence['locked']), expected)
-                        self.assertEqual(set(evidence['candidate']), expected)
-                        self.assertEqual(evidence['kind'], kind)
-                        self.assertEqual(set(evidence['legacy']), set(legacy))
-                        if receipt and '--promotion-receipt' in args:
-                            runtime.append('vendor-promotion.json')
-                        self.assertEqual(set(evidence['runtime']), set(runtime))
-                        expected |= set(legacy) | set(runtime)
-                        self.assertEqual({p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()}, expected | {'vendor-evidence.json'})
-                        for member in expected:
-                            self.assertEqual((output / member).read_bytes(), (root / member).read_bytes())
-                            self.assertEqual(evidence['sha256'][member], hashlib.sha256((root / member).read_bytes()).hexdigest())
-                        shutil.rmtree(output)
-                        (root / lock['files'][0]['destination']).write_bytes(b'corrupt')
-                        result = subprocess.run(args, cwd=root, capture_output=True, text=True)
-                        self.assertEqual(result.returncode, 2)
-                        self.assertFalse(output.exists())
+@pytest.mark.skipif(not (ROOT / '.vendor-sync-tools/vendor_stage.py').is_file(),
+                    reason='requires the workflow full-SHA parent checkout')
+def test_vendor_staging_workflow_payload_and_fail_closed():
+    assert len(fleet.vendor_staging(ROOT)) == 2
 
 
 # ── vendor lock provenance, vendor CI wiring, native pytest evidence ──────────────────────────
 
 def test_vendor_lock_provenance():
-    lock = json.loads((ROOT / 'vendor.lock.json').read_text(encoding='utf-8'))
-    assert lock['schema'] == 'vendor-lock/1'
-    xprobe_entries = [entry for entry in lock['files']
-                      if entry['repository'] == 'myon-bioinformatics/xprobe']
-    assert {(entry['source'], entry['destination']) for entry in xprobe_entries} == {
-        ('scripts/xprobe_pytest.py', 'vendor/xprobe_pytest.py'),
-        ('xprobe.py', 'vendor/xprobe.py'), ('LICENSE', 'vendor/xprobe-LICENSE')}
-    assert len(xprobe_entries) == 3
-    ghi_entries = [entry for entry in lock['files']
-                   if entry['repository'] == 'myon-bioinformatics/gh_identity']
-    assert {(entry['source'], entry['destination']) for entry in ghi_entries} == {
-        ('gh_identity.py', 'vendor/gh_identity.py'),
-        ('LICENSE', 'vendor/gh_identity-LICENSE')}
-    assert len(ghi_entries) == 2
-    # Every row: full-SHA ref == commit, checked-in bytes match blob_sha and sha256.
-    assert set(fleet.check_lock(ROOT)) == {entry['destination'] for entry in lock['files']}
+    # Every row: full-SHA ref == commit, checked-in bytes match blob_sha and sha256; no unlisted row of these repositories.
+    fleet.check_lock(ROOT, sources={
+        'vendor/xprobe_pytest.py': ('myon-bioinformatics/xprobe', 'scripts/xprobe_pytest.py'),
+        'vendor/xprobe.py': ('myon-bioinformatics/xprobe', 'xprobe.py'),
+        'vendor/xprobe-LICENSE': ('myon-bioinformatics/xprobe', 'LICENSE'),
+        'vendor/gh_identity.py': ('myon-bioinformatics/gh_identity', 'gh_identity.py'),
+        'vendor/gh_identity-LICENSE': ('myon-bioinformatics/gh_identity', 'LICENSE'),
+    })
     assert Path(xprobe.__file__).resolve() == ROOT / 'vendor/xprobe.py'
 
 

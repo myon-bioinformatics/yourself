@@ -1,5 +1,6 @@
 """Fleet contracts through the parent's shared checks (vendor/fleet_check.py): locks, pins, benchmark, Node entry."""
 import json
+import os
 
 import pytest
 
@@ -11,7 +12,7 @@ PARENT_WORKFLOW_PIN = "9e3da7ae1846e9604ebc24bb5178f7de094a4e77"
 ACCEPTED = {
     "vendor/xprobe.py": "1ffbb7b984075c683690bbe4e9deb06199cdfe94",
     "vendor/py_launch.cjs": "384f5dd532076062f7833038764e9a62322c387c",
-    "vendor/fleet_check.py": "6c29503cf17eda856766ddfdf4d66a5b0965a8b1",
+    "vendor/fleet_check.py": "81f6aea6231d4490e581443fdeb43a09e6018ff0",
 }
 TOOL, ENV_VAR = "yourself.py", "YOURSELF_PYTHON"
 CASES = {
@@ -23,9 +24,11 @@ needs_node = pytest.mark.skipif(fleet.node() is None, reason="Node 26+ not avail
 
 
 def test_vendor_lock_matches_checked_in_bytes_and_accepted_commits():
-    rows = fleet.check_lock(ROOT, commits=ACCEPTED)
-    launcher = rows["vendor/py_launch.cjs"]
-    assert (launcher["repository"], launcher["source"]) == (fleet.PARENT, "py_launch.cjs")
+    fleet.check_lock(ROOT, commits=ACCEPTED, sources={
+        "vendor/py_launch.cjs": (fleet.PARENT, "py_launch.cjs"),
+        "vendor/fleet_check.py": (fleet.PARENT, "fleet_check.py"),
+        "vendor/myon-bioinformatics-LICENSE": (fleet.PARENT, "LICENSE"),
+    })
 
 
 def test_parent_workflow_references_use_reviewed_rollout_commit():
@@ -46,10 +49,13 @@ def test_benchmark_parity_in_both_interpreter_modes(optimized, mismatch):
 
 
 def test_ci_provisions_node_before_tests():
-    job = fleet.workflow_job(ROOT, "test")
-    assert "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1" in job
-    assert "node-version: '26'" in job
-    assert job.index("actions/setup-node@") < job.index("name: Test with branch coverage")
+    # The guard is run in bash; on Windows a bare "bash" is the WSL launcher, so that lane checks the step order only.
+    job = fleet.workflow_job(ROOT, "test", node_floor=None if os.name == "nt" else 26)
+    assert job.index("actions/setup-node@") < job.index("node_major=") < job.index("name: Test with branch coverage")
+
+
+def test_workflow_actions_are_pinned_by_full_sha_with_version():
+    assert fleet.check_actions(ROOT)
 
 
 def test_no_per_tool_wrapper_and_readme_documents_the_direct_command():

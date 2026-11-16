@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -33,7 +33,7 @@ jobs:
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           prune-cache: true
       - name: Fetch pinned shared vendor tool
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: myon-bioinformatics/myon-bioinformatics
           ref: 9e3da7ae1846e9604ebc24bb5178f7de094a4e77
@@ -71,7 +71,7 @@ jobs:
           --runtime-evidence vendor-enrollment.json
       - name: Preserve resolved vendor snapshot
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vendor-snapshot
           path: build/vendor-evidence-candidate
@@ -95,12 +95,20 @@ jobs:
           - os: macos-latest
             python: "3.15"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
+      - name: Verify Node major
+        shell: bash
+        run: |
+          node_major=$(node -p "process.versions.node.split('.')[0]")
+          if [[ "$node_major" -lt 26 ]]; then
+            echo "node ${node_major} is older than 26" >&2
+            exit 1
+          fi
       - name: Install test dependencies
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -116,14 +124,14 @@ jobs:
         run: |
           uv sync --locked
       - name: Fetch pinned shared vendor tool
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: myon-bioinformatics/myon-bioinformatics
           ref: 9e3da7ae1846e9604ebc24bb5178f7de094a4e77
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Download resolved vendor snapshot
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vendor-snapshot
           path: .
@@ -147,7 +155,7 @@ jobs:
           python yourself.py --runner-env
       - name: Preserve runner fingerprint artifact
         if: always() && matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-fingerprint-ubuntu-py3.12
           path: reports/runner-fingerprint.json
@@ -159,7 +167,7 @@ jobs:
         run: python -m pytest -p vendor.xprobe_pytest --xprobe-jsonl=reports/pytest-events.jsonl --xprobe-repository=myon-bioinformatics/yourself --cov=yourself --cov-branch --cov-report=term-missing --cov-fail-under=90 --junitxml=reports/junit.xml
       - name: Preserve test report (including failed tests)
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-report-${{ matrix.os }}-py${{ matrix.python }}
           path: reports/
@@ -167,7 +175,7 @@ jobs:
           retention-days: 14
       - name: Preserve controlled child evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: controlled-failure-${{ matrix.os }}-py${{ matrix.python }}
           path: controlled-failure/
@@ -183,7 +191,7 @@ jobs:
           --runtime-evidence vendor-enrollment.json
       - name: Preserve vendor lock used by this run
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vendor-lock-${{ matrix.os }}-py${{ matrix.python }}
           path: build/vendor-evidence-test
