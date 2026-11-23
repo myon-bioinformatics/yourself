@@ -136,6 +136,8 @@ def test_vendor_lock_provenance():
         'vendor/xprobe-LICENSE': ('myon-bioinformatics/xprobe', 'LICENSE'),
         'vendor/gh_identity.py': ('myon-bioinformatics/gh_identity', 'gh_identity.py'),
         'vendor/gh_identity-LICENSE': ('myon-bioinformatics/gh_identity', 'LICENSE'),
+        'vendor/cli_args.py': ('myon-bioinformatics/cli_args', 'cli_args.py'),
+        'vendor/cli_args-LICENSE': ('myon-bioinformatics/cli_args', 'LICENSE'),
     })
     assert Path(xprobe.__file__).resolve() == ROOT / 'vendor/xprobe.py'
 

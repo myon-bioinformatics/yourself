@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import yourself
+from vendor.cli_args import run_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -105,9 +106,14 @@ cli = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cli)
 
 
+
 def run(*args):
-    return subprocess.run([sys.executable, '-S', str(ROOT / 'scripts/yourself_cli.py'), *args],
-                          capture_output=True, text=True, timeout=20)
+    return run_cli(
+        ROOT / 'scripts/yourself_cli.py',
+        *args,
+        python_options=('-S',),
+        timeout=20,
+    )
 
 
 def test_success_and_help(tmp_path, monkeypatch):
