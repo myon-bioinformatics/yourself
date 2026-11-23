@@ -1561,9 +1561,9 @@ def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="Read-only AI environment introduction")
     parser.suggest_on_error = True  # 🤔 argparse 3.14+: "maybe you meant" for choices; older Pythons ignore it
-    parser.add_argument("--directory", default=".")
-    parser.add_argument("--format", choices=("text", "markdown", "json"), default="text")
-    parser.add_argument("--versions", action="store_true")
+    parser.add_argument("--directory", default=".",help="workspace to observe (default: .)")
+    parser.add_argument("--format", choices=("text", "markdown", "json"), default="text",help="output format (default: %(default)s)")
+    parser.add_argument("--versions", action="store_true",help="also run each found tool's fixed version command")
     parser.add_argument("--minimal", action="store_true",
                         help="OS/runtime only; omit workspace and tool observations")
     parser.add_argument("--no-network", action="store_true",
@@ -1573,7 +1573,7 @@ def main(argv=None):
     parser.add_argument("--reach", nargs="+", metavar="HOST",
                         help="opt-in: TCP + TLS handshake to each HOST[:PORT] (via HTTPS_PROXY unless NO_PROXY); "
                              "prints one line per host and exits 1 unless all are ok")
-    parser.add_argument("--reach-timeout", type=float, default=5)
+    parser.add_argument("--reach-timeout", type=float, default=5,help="seconds per --reach host (default: %(default)s)")
     parser.add_argument("--runner-env", action="store_true",
                         help="emit CI runner image fingerprint (offline by default)")
     parser.add_argument("--runner-env-json", action="store_true",
