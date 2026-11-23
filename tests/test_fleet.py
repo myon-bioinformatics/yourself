@@ -14,6 +14,8 @@ ACCEPTED = {
     "vendor/xprobe.py": "1ffbb7b984075c683690bbe4e9deb06199cdfe94",
     "vendor/py_launch.cjs": "384f5dd532076062f7833038764e9a62322c387c",
     "vendor/fleet_check.py": "64db25eb0fd9025dbe3cbcbced8b88a39ecb9266",
+    "vendor/cli_args.py": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
+    "vendor/cli_args-LICENSE": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
 }
 TOOL, ENV_VAR = "yourself.py", "YOURSELF_PYTHON"
 CASES = {
@@ -29,6 +31,8 @@ def test_vendor_lock_matches_checked_in_bytes_and_accepted_commits():
         "vendor/py_launch.cjs": (fleet.PARENT, "py_launch.cjs"),
         "vendor/fleet_check.py": (fleet.PARENT, "fleet_check.py"),
         "vendor/myon-bioinformatics-LICENSE": (fleet.PARENT, "LICENSE"),
+        "vendor/cli_args.py": ("myon-bioinformatics/cli_args", "cli_args.py"),
+        "vendor/cli_args-LICENSE": ("myon-bioinformatics/cli_args", "LICENSE"),
     })
 
 
