@@ -100,8 +100,7 @@ def test_wsl_detection_is_not_a_container(tmp_path):
 
 def test_no_argument_run_is_one_key_per_line(tmp_path, fake_package_cli):
     shutil.copy(ROOT / "yourself.py", tmp_path / "yourself.py")  # single file, no siblings
-    proc = subprocess.run(fake_package_cli(tmp_path / "yourself.py"), cwd=tmp_path,
-                          capture_output=True, text=True, timeout=30)
+    proc = fake_package_cli(tmp_path / "yourself.py", cwd=tmp_path, timeout=30)
     assert proc.returncode == 0, proc.stderr
     facts = _lines(proc.stdout)
     assert facts["cwd"] == str(tmp_path) and facts["tool.python"] == "true"
@@ -111,8 +110,10 @@ def test_no_argument_run_is_one_key_per_line(tmp_path, fake_package_cli):
 
 def test_no_network_and_minimal(tmp_path, fake_package_cli):
     shutil.copy(ROOT / "yourself.py", tmp_path / "yourself.py")
-    run = lambda *a: subprocess.run(fake_package_cli(tmp_path / "yourself.py", *a), cwd=tmp_path,
-                                    capture_output=True, text=True, timeout=30).stdout
+    def run(*a):
+        proc = fake_package_cli(tmp_path / "yourself.py", *a, cwd=tmp_path, timeout=30)
+        assert not proc.timed_out, proc.stderr
+        return proc.stdout
     assert "ipv4" not in _lines(run("--no-network")) and "tool.git" in _lines(run("--no-network"))
     minimal = set(_lines(run("--minimal")))
     assert {"os", "python"} <= minimal <= {"os", "os_release", "python"}

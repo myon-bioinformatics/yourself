@@ -2,12 +2,13 @@
 bounded metadata reads, runtime_facts and Python package counts.
 """
 
-import json, os, subprocess, sys
+import json, os, sys
 from pathlib import Path
 
 import pytest
 
 import yourself
+from vendor.cli_args import Command, run_command
 
 
 # ── Node installs and Python / Node version pins: directory names, headers, small files ───────
@@ -227,21 +228,22 @@ def test_runtime_metadata_fifo_is_skipped_without_blocking(tmp_path, relative):
     path.parent.mkdir(parents=True, exist_ok=True)
     os.mkfifo(path)
     # A subprocess timeout makes a regression fail instead of hanging the suite.
-    subprocess.run([sys.executable, "-c", """
+    result = run_command(Command((sys.executable, "-c", """
 import sys
 from pathlib import Path
 import yourself
 root = Path(sys.argv[1])
 assert yourself.version_pins(root) == {"python": [], "node": []}
 assert yourself._node_header_version(root / "bin" / "node") is None
-""", str(tmp_path)], cwd=Path(yourself.__file__).parent, check=True, timeout=5)
+""", str(tmp_path))), cwd=Path(yourself.__file__).parent, timeout=5)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs named pipes")
 def test_file_replaced_by_fifo_between_stat_and_open_is_skipped(tmp_path):
     path = tmp_path / ".python-version"
     path.write_text("3.12", encoding="utf-8")
-    subprocess.run([sys.executable, "-c", """
+    result = run_command(Command((sys.executable, "-c", """
 import os, sys
 from pathlib import Path
 import yourself
@@ -263,7 +265,8 @@ except OSError:
     pass
 else:
     raise AssertionError("descriptor leaked")
-""", str(path)], cwd=Path(yourself.__file__).parent, check=True, timeout=5)
+""", str(path))), cwd=Path(yourself.__file__).parent, timeout=5)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "ascii"])

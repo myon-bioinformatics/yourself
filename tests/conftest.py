@@ -1,8 +1,7 @@
 """Deterministic package metadata for CLI tests, including copied-file children."""
-import sys
-
 import pytest
 import yourself
+from vendor.cli_args import run_cli
 
 
 @pytest.fixture
@@ -24,4 +23,5 @@ metadata.distributions = lambda: ()
 sys.argv = sys.argv[1:]
 runpy.run_path(sys.argv[0], run_name="__main__")
 '''
-    return lambda target, *args: [sys.executable, "-S", "-c", script, str(target), *args]
+    return lambda target, *args, cwd, timeout: run_cli(
+        target, *args, python_options=("-S", "-c", script), cwd=cwd, timeout=timeout)

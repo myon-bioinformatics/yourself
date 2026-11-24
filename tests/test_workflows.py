@@ -7,6 +7,7 @@ import pytest
 
 from vendor import fleet_check as fleet
 from vendor import xprobe
+from vendor.cli_args import build_env, pytest_command, run_command
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -238,14 +239,14 @@ def test_pass():
 @pytest.mark.skip(reason='private_skip')
 def test_skip(): pass''', encoding='utf-8')
     destination = tmp_path / 'events.jsonl'
-    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+    env = build_env({'PYTHONPATH': str(ROOT), 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
     env.pop('PYTEST_ADDOPTS', None)
-    result = subprocess.run(
-        [sys.executable, '-m', 'pytest', '-c', os.devnull, '--rootdir=' + str(tmp_path), '-p', 'vendor.xprobe_pytest',
-         '--xprobe-jsonl=' + str(destination), '--xprobe-repository=myon-bioinformatics/yourself',
-         '--xprobe-run-id=controlled-child',
-         *(['--junitxml=' + str(tmp_path / 'junit.xml'), '-o', 'junit_logging=all'] if junit else []),
-         str(suite)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    result = run_command(pytest_command([str(suite)], extra=[
+        '-c', os.devnull, '--rootdir=' + str(tmp_path), '-p', 'vendor.xprobe_pytest',
+        '--xprobe-jsonl=' + str(destination), '--xprobe-repository=myon-bioinformatics/yourself',
+        '--xprobe-run-id=controlled-child',
+        *(['--junitxml=' + str(tmp_path / 'junit.xml'), '-o', 'junit_logging=all'] if junit else []),
+    ]), cwd=tmp_path, env=env, timeout=30)
     # Save available raw evidence before importer/receipt/assertion failures.
     evidence = None
     target = os.environ.get('FAILURE_EVIDENCE_DIR') if junit else None
