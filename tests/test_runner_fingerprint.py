@@ -4,6 +4,7 @@ from pathlib import Path; from types import SimpleNamespace
 import pytest
 
 import yourself
+from vendor.cli_args import run_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -370,8 +371,7 @@ def test_summary_os_release_id_fallback():
     ["--no-probes", "--no-network"],
 ])
 def test_cli_default_unchanged_without_runner_env(argv):
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), *argv],
-                          capture_output=True, text=True, timeout=60)
+    proc = run_cli(ROOT / "yourself.py", *argv, timeout=60)
     assert proc.returncode in (0, 2)
     assert "runner-fingerprint" not in proc.stdout
     assert "runner-fingerprint/1" not in proc.stdout
@@ -398,10 +398,9 @@ def test_default_text_keys_probe_delta_only(monkeypatch, tmp_path):
 
 
 def test_cli_runner_env_json():
-    proc = subprocess.run([sys.executable, str(ROOT / "yourself.py"), "--runner-env", "--runner-env-json"],
-                          capture_output=True, text=True, timeout=60)
+    proc = run_cli(ROOT / "yourself.py", "--runner-env", "--runner-env-json", timeout=60)
     assert proc.returncode == 0
-    data = json.loads(proc.stdout)
+    data = proc.json()
     assert data["schema"] == "runner-fingerprint/1"
 
 

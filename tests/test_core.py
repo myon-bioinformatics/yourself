@@ -21,6 +21,7 @@ except ImportError:  # `python -S` (no site-packages): only the unittest.TestCas
     pytest = _NoPytest()
 
 import yourself
+from vendor.cli_args import Command, run_cli, run_command
 
 
 # ── collect / directory_summary / to_json / to_markdown (stdlib only) ─────────────────────────
@@ -31,8 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def run_copy(directory, module, code):
     """Copy yourself.py alone into ``directory`` as ``<module>.py``; run ``code`` there in a fresh interpreter."""
     shutil.copy(ROOT / "yourself.py", Path(directory) / (module + ".py"))
-    return subprocess.run([sys.executable, "-B", "-c", code], cwd=directory,
-                          capture_output=True, text=True, timeout=20)
+    return run_command(Command((sys.executable, "-B", "-c", code)), cwd=directory, timeout=20)
 
 
 class FactsTests(unittest.TestCase):
@@ -150,14 +150,12 @@ class IntegrationTests(unittest.TestCase):
 
     def test_cli_from_other_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
-            command = [sys.executable, str(ROOT / "scripts/yourself_cli.py")]
-            proc = subprocess.run(command + ["--format", "json", "--directory", tmp],
-                                  cwd=tmp, capture_output=True, text=True, timeout=20)
+            script = ROOT / "scripts/yourself_cli.py"
+            proc = run_cli(script, "--format", "json", "--directory", tmp, cwd=tmp, timeout=20)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            facts = json.loads(proc.stdout)
+            facts = proc.json()
             self.assertEqual(facts["directory"]["counts"]["files"], 0)
-            bad = subprocess.run(command + ["--directory", str(Path(tmp) / "missing")],
-                                 cwd=tmp, capture_output=True, text=True, timeout=20)
+            bad = run_cli(script, "--directory", Path(tmp) / "missing", cwd=tmp, timeout=20)
             self.assertEqual(bad.returncode, 2)
             self.assertEqual(bad.stdout, "")
 
@@ -429,11 +427,10 @@ def test_diagnose_optional_observations_and_os_release_failure(monkeypatch, tmp_
 
 
 def test_cli_explicit_version_context(tmp_path):
-    proc = subprocess.run([sys.executable, str(ROOT / 'scripts/yourself_cli.py'), '--diagnose',
-                           '--versions', '--command', 'python', '--directory', str(tmp_path), '--format', 'json'],
-                          capture_output=True, text=True, timeout=20)
+    proc = run_cli(ROOT / 'scripts/yourself_cli.py', '--diagnose', '--versions', '--command', 'python',
+                   '--directory', tmp_path, '--format', 'json', timeout=20)
     assert proc.returncode == 0, proc.stderr
-    facts = json.loads(proc.stdout)
+    facts = proc.json()
     assert facts['commands'][0]['version'] == yourself.platform.python_version()
     assert facts['workspace']['markers'] == []
     assert facts['host'] is None and facts['listeners'] is None

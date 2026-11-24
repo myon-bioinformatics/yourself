@@ -31,10 +31,9 @@ assert __name__ == "__main__"
 assert sys.argv[1:] == ["--fixture"]
 print("synthetic")
 ''', encoding="utf-8")
-    proc = subprocess.run(fake_package_cli(target, "--fixture"), cwd=tmp_path,
-                          capture_output=True, text=True, timeout=10)
+    proc = fake_package_cli(target, "--fixture", cwd=tmp_path, timeout=10)
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout == "synthetic\n"
+    assert proc.stdout.replace("\r\n", "\n") == "synthetic\n"  # run_cli keeps the child's own newline
     assert not (tmp_path / "__pycache__").exists()
 
 
@@ -81,19 +80,17 @@ def test_workspace_error(monkeypatch, capsys, fake_python_packages):
 def test_copy_one_file_execution(tmp_path, fake_package_cli):
     target = tmp_path / "tool.py"
     target.write_bytes((ROOT / "yourself.py").read_bytes())
-    proc = subprocess.run(fake_package_cli(target, "--format", "json"),
-                          cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    proc = fake_package_cli(target, "--format", "json", cwd=tmp_path, timeout=10)
     assert proc.returncode == 0, proc.stderr
-    assert json.loads(proc.stdout)["workspace"] is not None
+    assert proc.json()["workspace"] is not None
 
 
 def test_copy_one_file_minimal_entry(tmp_path):
     target = tmp_path / "standalone.py"
     target.write_bytes((ROOT / "yourself.py").read_bytes())
-    proc = subprocess.run([sys.executable, "-S", str(target), "--minimal", "--format", "json"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    proc = run_cli(target, "--minimal", "--format", "json", python_options=("-S",), cwd=tmp_path, timeout=10)
     assert proc.returncode == 0, proc.stderr
-    report = json.loads(proc.stdout)
+    report = proc.json()
     assert report["os"]["system"] and report["runtime"]["version"]
     assert "python_packages" not in report and report["directory"] is None
     assert list(tmp_path.iterdir()) == [target]  # no siblings or __pycache__ required
