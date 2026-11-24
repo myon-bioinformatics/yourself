@@ -8,7 +8,7 @@ Single-file, standard-library Python tool for read-only inspection of host, OS, 
 
 ## Concept overview
 
-![Host and optional directory facts pass through read-only collection and diagnosis to text, Markdown, or JSON reports.](docs/images/yourself-concept.png)
+![Host and optional directory facts pass through read-only collection and diagnosis to text, Markdown, or JSON reports.](docs/images/repository-concept.png)
 
 Read-only host and runtime observations are formatted as text, Markdown, or JSON for troubleshooting and assistant context. Optional observation scopes and fixed probes are described below.
 
@@ -16,7 +16,7 @@ The panel’s hostname-default note applies to `collect()`. The no-argument CLI 
 
 ### Challenges, roles, and outcomes
 
-![Challenges, roles, and outcomes for environment observation, diagnosis, and text, Markdown, or JSON reports.](docs/images/yourself-concept-v2.png)
+![Challenges, roles, and outcomes for environment observation, diagnosis, and text, Markdown, or JSON reports.](docs/images/repository-concept-v2.png)
 
 Complementary view of observation, diagnosis, and report output. The panel’s “recommendations” wording is conceptual: `diagnose()` reports facts, not recommendations or a complete dependency/configuration inventory. The hostname/network disclosure notes above still apply.
 
