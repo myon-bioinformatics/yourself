@@ -16,76 +16,97 @@
       ]
     },
     {
-      "type": "section",
-      "title": "📥 取得",
-      "blocks": [
+      "type": "tabs",
+      "id": "guide",
+      "tabs": [
         {
-          "type": "text",
-          "text": "1 ファイルを置くだけで動きます（pip 不要）。"
-        },
-        {
-          "type": "output",
-          "text": "curl -fsSLO https://raw.githubusercontent.com/myon-bioinformatics/yourself/main/yourself.py"
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "title": "▶️ 実行",
-      "blocks": [
-        {
-          "type": "card",
-          "title": "🖥️ 環境をひと目で",
-          "text": "引数なしで、OS・Python・ツール・ディスク・ネットワークを 1 行ずつ出します。",
+          "label": "🧩 機能一覧",
           "blocks": [
             {
-              "type": "output",
-              "text": "$ python yourself.py"
+              "type": "section",
+              "title": "📥 取得",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "1 ファイルを置くだけで動きます（pip 不要）。"
+                },
+                {
+                  "type": "output",
+                  "text": "curl -fsSLO https://raw.githubusercontent.com/myon-bioinformatics/yourself/main/yourself.py"
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "title": "▶️ 実行",
+              "blocks": [
+                {
+                  "type": "card",
+                  "title": "🖥️ 環境をひと目で",
+                  "text": "引数なしで、OS・Python・ツール・ディスク・ネットワークを 1 行ずつ出します。",
+                  "blocks": [
+                    {
+                      "type": "output",
+                      "text": "$ python yourself.py"
+                    }
+                  ]
+                },
+                {
+                  "type": "card",
+                  "title": "🤏 最小",
+                  "text": "OS とランタイムだけ。",
+                  "blocks": [
+                    {
+                      "type": "output",
+                      "text": "$ python yourself.py --minimal\nos: Linux 6.18.44-fc-v378 x86_64\npython: CPython 3.13.18 64bit"
+                    }
+                  ]
+                },
+                {
+                  "type": "card",
+                  "title": "🧾 形式を選ぶ",
+                  "text": "text / markdown / json。",
+                  "blocks": [
+                    {
+                      "type": "output",
+                      "text": "$ python yourself.py --format json --minimal\n{\n  \"directory\": null,\n  \"host\": null,\n  \"os\": {\n    \"machine\": \"x86_64\",\n…"
+                    }
+                  ]
+                },
+                {
+                  "type": "card",
+                  "title": "🙈 ネットワークを省く",
+                  "text": "ホスト名・アドレス・経路・DNS を出しません。",
+                  "blocks": [
+                    {
+                      "type": "output",
+                      "text": "$ python yourself.py --no-network"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "title": "🐍 Python から呼ぶ",
+              "blocks": [
+                {
+                  "type": "output",
+                  "text": "python -c 'import yourself; print(yourself.collect())'"
+                }
+              ]
             }
           ]
         },
         {
-          "type": "card",
-          "title": "🤏 最小",
-          "text": "OS とランタイムだけ。",
+          "label": "🎞 GIF デモ",
           "blocks": [
             {
-              "type": "output",
-              "text": "$ python yourself.py --minimal\nos: Linux 6.18.44-fc-v378 x86_64\npython: CPython 3.13.18 64bit"
+              "type": "text",
+              "text": "🎞 まだ GIF はありません。ブラウザテストや実行の様子を GIF にしたら、ここに並びます。",
+              "muted": true
             }
           ]
-        },
-        {
-          "type": "card",
-          "title": "🧾 形式を選ぶ",
-          "text": "text / markdown / json。",
-          "blocks": [
-            {
-              "type": "output",
-              "text": "$ python yourself.py --format json --minimal\n{\n  \"directory\": null,\n  \"host\": null,\n  \"os\": {\n    \"machine\": \"x86_64\",\n…"
-            }
-          ]
-        },
-        {
-          "type": "card",
-          "title": "🙈 ネットワークを省く",
-          "text": "ホスト名・アドレス・経路・DNS を出しません。",
-          "blocks": [
-            {
-              "type": "output",
-              "text": "$ python yourself.py --no-network"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "title": "🐍 Python から呼ぶ",
-      "blocks": [
-        {
-          "type": "output",
-          "text": "python -c 'import yourself; print(yourself.collect())'"
         }
       ]
     },
