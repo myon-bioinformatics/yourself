@@ -1,7 +1,7 @@
 {
   "schema": "web-ui-page/1",
   "title": "yourself 利用ガイド",
-  "theme": "auto",
+  "theme": "modern",
   "description": "ホスト・OS・ランタイムの事実を読み取り専用で観測し、トラブル対応や AI への文脈として貼れる形で出します。",
   "icon": "./icon.png",
   "favicon": "./favicon.png",
