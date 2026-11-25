@@ -99,6 +99,71 @@
           ]
         },
         {
+          "label": "🔬 検証ガイド",
+          "blocks": [
+            {
+              "type": "runbook",
+              "id": "verify",
+              "books": [
+                {
+                  "label": "🐍 python",
+                  "intro": "🤖 のついた手順は CI で実際に動かし、出た結果をそのまま載せています。",
+                  "runbook": {
+                    "key": "yourself/python",
+                    "steps": [
+                      {
+                        "id": "get",
+                        "title": "📥 ファイルを置く",
+                        "command": "curl -fsSLO https://raw.githubusercontent.com/myon-bioinformatics/yourself/main/yourself.py",
+                        "needs": "🌐 ネットワーク"
+                      },
+                      {
+                        "id": "minimal",
+                        "title": "🤏 最小",
+                        "command": "python yourself.py --minimal",
+                        "run": true
+                      },
+                      {
+                        "id": "json",
+                        "title": "🧾 形式を選ぶ",
+                        "command": "python yourself.py --format json --minimal",
+                        "run": true
+                      },
+                      {
+                        "id": "offline",
+                        "title": "🙈 ネットワークを省く",
+                        "command": "python yourself.py --no-network",
+                        "run": true
+                      }
+                    ]
+                  }
+                },
+                {
+                  "label": "⚡ uv",
+                  "intro": "uv があれば Python の版を気にせず動きます。",
+                  "runbook": {
+                    "key": "yourself/uv",
+                    "steps": [
+                      {
+                        "id": "get",
+                        "title": "📥 ファイルを置く",
+                        "command": "curl -fsSLO https://raw.githubusercontent.com/myon-bioinformatics/yourself/main/yourself.py",
+                        "needs": "🌐 ネットワーク"
+                      },
+                      {
+                        "id": "minimal",
+                        "title": "🤏 最小",
+                        "command": "uv run --no-project python yourself.py --minimal",
+                        "run": true
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "label": "🎞 GIF デモ",
           "blocks": [
             {
