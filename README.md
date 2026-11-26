@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/brand/icon-512.png" width="200" alt="yourself"></p>
+<p align="center"><img src="https://myon-bioinformatics.github.io/yourself/icon.png" width="200" alt="yourself"></p>
 
 # yourself
 
