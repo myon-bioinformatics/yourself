@@ -15,7 +15,7 @@ jobs:
   changes:
     permissions:
       contents: read
-    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-change-detection.yml@0361d4d81add261ba15073fc32f2a524d2b7e2de
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-change-detection.yml@43cfe1df924ea96ca44f47a6771c18102c38f7f3
 
   resolve-vendor:
     if: needs.changes.outputs.product_changed == 'true'
@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 0361d4d81add261ba15073fc32f2a524d2b7e2de
+          ref: 43cfe1df924ea96ca44f47a6771c18102c38f7f3
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Verify checked-in vendor copies
@@ -130,7 +130,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: myon-bioinformatics/myon-bioinformatics
-          ref: 0361d4d81add261ba15073fc32f2a524d2b7e2de
+          ref: 43cfe1df924ea96ca44f47a6771c18102c38f7f3
           path: .vendor-sync-tools
           persist-credentials: false
       - name: Download resolved vendor snapshot
@@ -207,7 +207,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-junit-identity.yml@0361d4d81add261ba15073fc32f2a524d2b7e2de
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-junit-identity.yml@43cfe1df924ea96ca44f47a6771c18102c38f7f3
     with:
       commit-sha: ${{ github.event.pull_request.head.sha || github.sha }}
       expected-reports: '["test-report-ubuntu-latest-py3.11/junit.xml","test-report-ubuntu-latest-py3.12/junit.xml","test-report-ubuntu-latest-py3.13/junit.xml","test-report-ubuntu-latest-py3.14/junit.xml","test-report-ubuntu-latest-py3.15/junit.xml","test-report-windows-latest-py3.15/junit.xml","test-report-macos-latest-py3.15/junit.xml"]'
@@ -219,4 +219,4 @@ jobs:
     if: needs.changes.outputs.workflow_changed == 'true'
     permissions:
       contents: read
-    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-actionlint.yml@0361d4d81add261ba15073fc32f2a524d2b7e2de
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-actionlint.yml@43cfe1df924ea96ca44f47a6771c18102c38f7f3
