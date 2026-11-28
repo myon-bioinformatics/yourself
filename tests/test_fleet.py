@@ -22,15 +22,15 @@ def load_vendored(name, relpath):
 fleet = load_vendored("yourself_fleet_check", "vendor/fleet_check.py")
 
 ROOT = fleet.repo_root(__file__)
-PARENT_WORKFLOW_PIN = "27dedd9651efc816fa88d8922adb5f242725df69"
+PARENT_WORKFLOW_PIN = "main"  # 🔁 own sources follow main (2026-11-28)
 # Node sources and the shared checks stay on accepted upstream commits with exact bytes.
 ACCEPTED = {
-    "vendor/xprobe.py": "1ffbb7b984075c683690bbe4e9deb06199cdfe94",
-    "vendor/py_launch.cjs": "de63762d8485e4d398a651715d34ebf4a04c23f2",
-    "vendor/fleet_check.py": "20de01921e50e9339aa9271b0547a5be7649b3b3",
-    "vendor/cli_args.py": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
-    "vendor/cli_args-LICENSE": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
-}
+    "vendor/xprobe.py",
+    "vendor/py_launch.cjs",
+    "vendor/fleet_check.py",
+    "vendor/cli_args.py",
+    "vendor/cli_args-LICENSE",
+}  # 🔁 locked destinations; they follow main
 TOOL, ENV_VAR = "yourself.py", "YOURSELF_PYTHON"
 CASES = {
     "help": (["--help"], 0),
@@ -41,7 +41,7 @@ needs_node = pytest.mark.skipif(fleet.node() is None, reason="Node 26+ not avail
 
 
 def test_vendor_lock_matches_checked_in_bytes_and_accepted_commits():
-    fleet.check_lock(ROOT, commits=ACCEPTED, sources={
+    fleet.check_lock(ROOT, sources={
         "vendor/py_launch.cjs": (fleet.PARENT, "py_launch.cjs"),
         "vendor/fleet_check.py": (fleet.PARENT, "fleet_check.py"),
         "vendor/myon-bioinformatics-LICENSE": (fleet.PARENT, "LICENSE"),

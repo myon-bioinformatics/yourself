@@ -1,5 +1,8 @@
 name: Stdlib runtime compatibility
 on:
+  schedule:
+    - cron: "51 21 * * *"  # 🔁 follow-main
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -39,3 +42,13 @@ jobs:
         run: |
           python -S -m unittest discover -s tests -p test_core.py -v
 
+  # 🔁 own sources follow main: on schedule / manual run, take main of own repositories and push to main
+  follow-main:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: myon-bioinformatics/myon-bioinformatics/.github/workflows/reusable-follow-main.yml@main
+    permissions:
+      contents: write
+    with:
+      node-version: "26"
+      check: |
+        uv run --locked python -m pytest -q
