@@ -27,7 +27,7 @@ PARENT_WORKFLOW_PIN = "27dedd9651efc816fa88d8922adb5f242725df69"
 ACCEPTED = {
     "vendor/xprobe.py": "1ffbb7b984075c683690bbe4e9deb06199cdfe94",
     "vendor/py_launch.cjs": "de63762d8485e4d398a651715d34ebf4a04c23f2",
-    "vendor/fleet_check.py": "20de01921e50e9339aa9271b0547a5be7649b3b3",
+    "vendor/fleet_check.py": "eee8c096fc753465a5d5a26264e64c12e555638f",
     "vendor/cli_args.py": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
     "vendor/cli_args-LICENSE": "5ae22b1a1b808eca93e3c385a8db867fbeb8ee32",
 }
@@ -114,3 +114,6 @@ class ScriptsDescribeThemselves(unittest.TestCase):
         for path in sorted(root.glob("*.py")):
             if path.name != "conftest.py":
                 fleet.check_imports(root, path.name)
+
+    def test_no_top_level_vendor_package_imports(self):
+        assert fleet.check_no_vendor_package_imports(ROOT) == []
