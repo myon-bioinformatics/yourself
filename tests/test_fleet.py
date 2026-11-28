@@ -1,11 +1,25 @@
 """Fleet contracts through the parent's shared checks (vendor/fleet_check.py): locks, pins, benchmark, Node entry."""
+import importlib.util
+import sys
+from pathlib import Path
 import unittest
 import json
 import os
 
 import pytest
 
-from vendor import fleet_check as fleet
+
+def load_vendored(name, relpath):
+    """Load a vendored file by path under a repo-unique name (cli_args README: Loading a vendored copy)."""
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / relpath)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+fleet = load_vendored("yourself_fleet_check", "vendor/fleet_check.py")
 
 ROOT = fleet.repo_root(__file__)
 PARENT_WORKFLOW_PIN = "27c46411c0a07d9b4d0f1ad5751ed1bb9e869b5c"
