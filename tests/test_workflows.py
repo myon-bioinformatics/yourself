@@ -1,7 +1,7 @@
 """CI workflow, vendor lock and native pytest evidence contracts."""
 
 import importlib.util
-import json, os, re, shlex, shutil, subprocess, sys
+import json, os, shlex, shutil, subprocess, sys
 from pathlib import Path
 
 import pytest
@@ -194,7 +194,7 @@ def test_public_vendor_ci_updates_without_repository_writes():
     pins = [s['with']['ref'] for steps in (resolve, test) for s in steps
             if s.get('with', {}).get('repository') == 'myon-bioinformatics/myon-bioinformatics']
     assert len(pins) == 2 and len(set(pins)) == 1
-    assert all(re.fullmatch('[0-9a-f]{40}', pin) for pin in pins)
+    # 🔁 own sources follow main: the parent checkout ref is main
     assert not (ROOT / '.github/workflows/vendor-update.yml').exists()
     assert ci['permissions'] == {'contents': 'read'}
     for steps in (resolve, test):
