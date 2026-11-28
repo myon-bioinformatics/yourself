@@ -789,8 +789,8 @@ def test_summary_omits_dpkg_when_not_ok_without_reason():
 
 
 def test_mutation_script_zero_survivors():
-    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "runner_fingerprint_mutations.py")],
-                            cwd=ROOT, capture_output=True, text=True, timeout=120)
+    proc = run_cli(ROOT / "scripts" / "runner_fingerprint_mutations.py",
+                   cwd=ROOT, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "survivors: 0" in proc.stdout
 
