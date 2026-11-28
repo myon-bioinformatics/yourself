@@ -256,8 +256,22 @@ def test_skip(): pass''', encoding='utf-8')
     destination = tmp_path / 'events.jsonl'
     env = build_env({'PYTHONPATH': str(ROOT), 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
     env.pop('PYTEST_ADDOPTS', None)
+    (tmp_path / "conftest.py").write_text(
+        "import importlib.util\nimport sys\nfrom pathlib import Path\n\n\n"
+        "def load_vendored(name, relpath):\n"
+        '    """Load a vendored file by path under a repo-unique name (cli_args README: Loading a vendored copy)."""\n'
+        "    if name not in sys.modules:\n"
+        "        spec = importlib.util.spec_from_file_location(name, Path(%r) / relpath)\n"
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        sys.modules[name] = module\n"
+        "        spec.loader.exec_module(module)\n"
+        "    return sys.modules[name]\n\n"
+        'load_vendored("yourself_xprobe_pytest", "vendor/xprobe_pytest.py")\n'
+        'pytest_plugins = ["yourself_xprobe_pytest"]\n'
+        % str(ROOT),
+        encoding="utf-8")
     result = run_command(pytest_command([str(suite)], extra=[
-        '-c', os.devnull, '--rootdir=' + str(tmp_path), '-p', 'vendor.xprobe_pytest',
+        '-c', os.devnull, '--rootdir=' + str(tmp_path),
         '--xprobe-jsonl=' + str(destination), '--xprobe-repository=myon-bioinformatics/yourself',
         '--xprobe-run-id=controlled-child',
         *(['--junitxml=' + str(tmp_path / 'junit.xml'), '-o', 'junit_logging=all'] if junit else []),
